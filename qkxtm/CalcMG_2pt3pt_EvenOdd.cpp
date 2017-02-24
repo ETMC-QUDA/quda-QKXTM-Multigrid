@@ -27,7 +27,8 @@
 // In a typical application, quda.h is the only QUDA header required.
 #include <quda.h>
 #include <qudaQKXTM_Kepler.h>
-// Wilson, clover-improved Wilson, twisted mass, and domain wall are supported.
+// Wilson, clover-improved Wilson, twisted mass, and domain wall are 
+// supported.
 
 //========================================================================//
 //====== P A R A M E T E R   S E T T I N G S   A N D   C H E C K S =======//
