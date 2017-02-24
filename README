@@ -1,18 +1,18 @@
 ETMC-QUDA production code base                        24th February 2017
 ------------------------------------------------------------------------
 
-This library is an extention to QUDA mainline: 21st September 2016. It 
+This library is an extension to QUDA mainline: 21st September 2016. It 
 contains routines to calculate 2- and 3-point hadronic correlation functions,
 and an All-to-All propagator with a gauge covariant derivative, with a 
 variety of correlation functions.
 
-This partcular libraray is a multigrid enabled version of ETMC's deflated 
+This particular library is a multigrid enabled version of ETMC's deflated 
 solver code base, currently hosted here:
 
 https://github.com/ckallidonis/quda/tree/eig-solver-fullOp-0.8.0
 
 
-Depenedencies:
+Dependencies:
 
 In order to compile this code, one must also have  the following installed:
 
@@ -24,11 +24,11 @@ In order to compile this code, one must also have  the following installed:
    lime
    gsl
 
-The QKXTM boolean is ON by default and will expect the above for succesful 
+The QKXTM boolean is ON by default and will expect the above for successful 
 compilation.
 
 
-Complilation:
+Compilation:
 
 One must have the CONTRACT boolean ON in order to ensure that the covariant
 derivative functions in QUDA are compiled. MAGMA, and MULTIGRID booleans also
@@ -39,7 +39,7 @@ the file blas_magma.cu.
 Known Issues:
 
 One must pass gauge fields to the QKXTM executables in IDLG lime format. It
-expects a separete smeared gauge field for source construction in the
+expects a separate smeared gauge field for source construction in the
 hadronic 2pt3pt functions. QUDA has gauge smearing functionality, which
 should be utilised.
 
