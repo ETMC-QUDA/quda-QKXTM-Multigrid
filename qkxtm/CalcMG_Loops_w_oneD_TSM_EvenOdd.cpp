@@ -30,9 +30,9 @@
 #include <qudaQKXTM_Kepler.h>
 
 
-//============================================================================//
-//======== P A R A M E T E R   S E T T I N G S   A N D   C H E C K S =========//
-//============================================================================//
+//========================================================================//
+//====== P A R A M E T E R   S E T T I N G S   A N D   C H E C K S =======//
+//========================================================================//
 
 // Wilson, clover-improved Wilson, twisted mass, and domain wall are supported.
 extern QudaDslashType dslash_type;
@@ -124,34 +124,9 @@ extern int TSM_NdumpLP;
 extern int TSM_maxiter;
 extern double TSM_tol;
 
-//-C.K. ARPACK Parameters
-// extern int PolyDeg;
-// extern int nEv;
-// extern int nKv;
-// extern char *spectrumPart;
-// extern bool isACC;
-// extern double tolArpack;
-// extern int maxIterArpack;
-// extern char arpack_logfile[];
-// extern double amin;
-// extern double amax;
-// extern bool isEven;
-// extern bool isFullOp;
-
-//-C.K. ARPACK Parameters if we are using full operator and 
-// even-odd preconditioning for the stochastic part
-// extern int PolyDeg_EO;
-// extern int nEv_EO;
-// extern int nKv_EO;
-// extern char *spectrumPart_EO;
-// extern bool isACC_EO;
-// extern double tolArpack_EO;
-// extern int maxIterArpack_EO;
-// extern char arpack_logfile_EO[];
-// extern double amin_EO;
-// extern double amax_EO;
-// extern bool isEven_EO;
-// extern bool isFullOp_EO;
+namespace quda {
+  extern void setTransferGPU(bool);
+}
 
 void display_test_info() {
   printfQuda("running the following test:\n");
@@ -489,9 +464,9 @@ void setMultigridParam(QudaMultigridParam &mg_param) {
 }
 
 
-//============================================================================//
-//==== C O N T A I N E R   A N D   Q U D A   I N I T I A L I S A T I O N  ====//
-//============================================================================//
+//=======================================================================//
+//== C O N T A I N E R   A N D   Q U D A   I N I T I A L I S A T I O N  =//
+//=======================================================================//
 
 int main(int argc, char **argv)
 {
@@ -523,69 +498,7 @@ int main(int argc, char **argv)
 
   display_test_info();
 
-  //QKXTM: Production specific parameters, external to QUDA.
-  //--------------------------------------------------------
-  //-C.K. Pass ARPACK parameters to arpackInfo
-  //QKXTM: DMH We keep the ARPACK container for the exclusive use of
-  //the 'isEven' boolean.
-  // qudaQKXTM_arpackInfo arpackInfo;
-
-  // arpackInfo.PolyDeg = PolyDeg;
-  // arpackInfo.nEv = nEv;
-  // arpackInfo.nKv = nKv;
-  // arpackInfo.isACC = isACC;
-  // arpackInfo.tolArpack = tolArpack;
-  // arpackInfo.maxIterArpack = maxIterArpack;
-  // strcpy(arpackInfo.arpack_logfile,arpack_logfile);
-  // arpackInfo.amin = amin;
-  // arpackInfo.amax = amax;
-  // arpackInfo.isEven = isEven;
-  // arpackInfo.isFullOp = isFullOp;
-
-  // if(strcmp(spectrumPart,"SR")==0) arpackInfo.spectrumPart = SR;
-  // else if(strcmp(spectrumPart,"LR")==0) arpackInfo.spectrumPart = LR;
-  // else if(strcmp(spectrumPart,"SM")==0) arpackInfo.spectrumPart = SM;
-  // else if(strcmp(spectrumPart,"LM")==0) arpackInfo.spectrumPart = LM;
-  // else if(strcmp(spectrumPart,"SI")==0) arpackInfo.spectrumPart = SI;
-  // else if(strcmp(spectrumPart,"LI")==0) arpackInfo.spectrumPart = LI;
-  // else{
-  //   printf("Error: Your spectrumPart option is suspicious\n");
-  //   exit(-1);
-  // }
-
-  //-C.K. Pass ARPACK parameters to arpackInfoEO, if we are using full operator and 
-  // even-odd preconditioning for the stochastic part
-  //qudaQKXTM_arpackInfo arpackInfoEO;
-
-  /*
-  if(isFullOp && fullOp_stochEO){
-    arpackInfoEO.PolyDeg = PolyDeg_EO;
-    arpackInfoEO.nEv = nEv_EO;
-    arpackInfoEO.nKv = nKv_EO;
-    arpackInfoEO.isACC = isACC_EO;
-    arpackInfoEO.tolArpack = tolArpack_EO;
-    arpackInfoEO.maxIterArpack = maxIterArpack_EO;
-    strcpy(arpackInfoEO.arpack_logfile,arpack_logfile_EO);
-    arpackInfoEO.amin = amin_EO;
-    arpackInfoEO.amax = amax_EO;
-    arpackInfoEO.isEven = isEven_EO;
-    // by default we are not using the Full Operator, hard-coded
-    arpackInfoEO.isFullOp = false;
-
-    if(strcmp(spectrumPart_EO,"SR")==0)      arpackInfoEO.spectrumPart = SR;
-    else if(strcmp(spectrumPart_EO,"LR")==0) arpackInfoEO.spectrumPart = LR;
-    else if(strcmp(spectrumPart_EO,"SM")==0) arpackInfoEO.spectrumPart = SM;
-    else if(strcmp(spectrumPart_EO,"LM")==0) arpackInfoEO.spectrumPart = LM;
-    else if(strcmp(spectrumPart_EO,"SI")==0) arpackInfoEO.spectrumPart = SI;
-    else if(strcmp(spectrumPart_EO,"LI")==0) arpackInfoEO.spectrumPart = LI;
-    else{
-      printf("Error: Your spectrumPart option is suspicious\n");
-      exit(-1);
-    }
-  }
-  */
-
-  //QKXTM: DMH qkxtm specfic inputs
+  //QKXTM: qkxtm specfic inputs
   qudaQKXTMinfo_Kepler info;
   info.lL[0] = xdim;
   info.lL[1] = ydim;
@@ -624,45 +537,6 @@ int main(int argc, char **argv)
   if(loopInfo.Nstoch%loopInfo.Ndump==0) loopInfo.Nprint = loopInfo.Nstoch/loopInfo.Ndump;
   else errorQuda("NdumpStep MUST divide Nstoch exactly! Exiting.\n");
 
-  /*
-  if(strcmp(filename_dSteps,"none")==0){
-    loopInfo.nSteps_defl = 1;
-    loopInfo.deflStep[0] = nEv;
-  }
-  else{
-    FILE *ptr_dstep;    
-    if( (ptr_dstep = fopen(filename_dSteps,"r"))==NULL ){
-      fprintf(stderr,"Cannot open %s for reading. Exiting\n",filename_dSteps);
-      exit(-1);
-    }
-    fscanf(ptr_dstep,"%d\n",&loopInfo.nSteps_defl);
-    fscanf(ptr_dstep,"%d\n",&loopInfo.deflStep[0]);
-    if(loopInfo.deflStep[0]>nEv){
-      printf("ERROR: Supplied deflation step is larger than eigenvalues requested. Exiting.\n");
-      exit(-1);
-    }
-    for(int s=1;s<loopInfo.nSteps_defl;s++){
-      fscanf(ptr_dstep,"%d\n",&loopInfo.deflStep[s]);
-      if(loopInfo.deflStep[s]<loopInfo.deflStep[s-1]){
-	printf("ERROR: Deflation steps MUST be in ascending order. Exiting.\n");
-	exit(-1);
-      }
-      if(loopInfo.deflStep[s]>nEv){
-	printf("WARNING: Supplied deflation step %d is larger than eigenvalues requested. Discarding this step.\n",s);
-	s--;
-	loopInfo.nSteps_defl--;
-      }
-    }
-    fclose(ptr_dstep);
-
-    //- This is to always make sure that the total number of eigenvalues is included
-    if(loopInfo.deflStep[loopInfo.nSteps_defl-1] != nEv){
-      loopInfo.nSteps_defl++;
-      loopInfo.deflStep[loopInfo.nSteps_defl-1] = nEv;
-    }
-  }
-  */
-  
   //- TSM parameters
   loopInfo.useTSM = useTSM;
   if(useTSM){
@@ -733,18 +607,16 @@ int main(int argc, char **argv)
     memcpy(gauge_Plaq[mu],gauge[mu],V*9*2*sizeof(double));
   mapEvenOddToNormalGauge(gauge_Plaq,gauge_param,xdim,ydim,zdim,tdim);
 
-  applyBoundaryCondition(gauge, V/2 ,&gauge_param);
-  
-  //  if (strcmp(latfile_smeared,"")) {
-  //readLimeGaugeSmeared(gauge_APE, latfile_smeared, &gauge_param, &inv_param, gridsize_from_cmdline);        // first read gauge field without apply BC
-  //mapEvenOddToNormalGauge(gauge_APE,gauge_param,xdim,ydim,zdim,tdim);
-  //} else { // else generate a random SU(3) field
-  // construct_gauge_field(gauge_APE, 1, gauge_param.cpu_prec, &gauge_param);
-  //}
+  // load in the command line supplied smeared gauge field
+  // first read gauge field without apply BC  
+  readLimeGaugeSmeared(gauge_APE, latfile_smeared, &gauge_param, &inv_param,
+		       gridsize_from_cmdline);
+  mapEvenOddToNormalGauge(gauge_APE,gauge_param,xdim,ydim,zdim,tdim);
 
   // start the timer
   double time0 = -((double)clock());
 
+  // initialize the QUDA library
   initQuda(device);
   //Print remaining info to stdout
   init_qudaQKXTM_Kepler(&info);
@@ -764,20 +636,12 @@ int main(int argc, char **argv)
       solve_type == QUDA_DIRECT_PC_SOLVE) {
     inv_param.solve_type = QUDA_DIRECT_PC_SOLVE;
   }
-  // load the clover term, if desired
-  if (dslash_type == QUDA_CLOVER_WILSON_DSLASH)
-    loadCloverQuda(clover,clover_inv,&inv_param);
-  
+
   if (dslash_type == QUDA_TWISTED_CLOVER_DSLASH) 
     loadCloverQuda(NULL, NULL, &inv_param);
   printfQuda("After clover term\n");
   
   //QKXTM: DMH EXP
-  // setup the multigrid solver for UP flavour
-  //mg_param.invert_param->twist_flavor = QUDA_TWIST_PLUS;
-  //void *mg_preconditionerUP = newMultigridQuda(&mg_param);
-  //inv_param.preconditionerUP = mg_preconditionerUP;
-
   // setup the multigrid solver for DN flavour
   mg_param.invert_param->twist_flavor = QUDA_TWIST_MINUS;
   void *mg_preconditioner = newMultigridQuda(&mg_param);
@@ -787,8 +651,7 @@ int main(int argc, char **argv)
   
   calcMG_loop_wOneD_TSM_EvenOdd(gauge_Plaq, &inv_param, &gauge_param, loopInfo, info);
   
-  // free the multigrid solver(s)
-  //destroyMultigridQuda(mg_preconditionerUP);
+  // free the multigrid solver
   destroyMultigridQuda(mg_preconditioner);
   
   freeGaugeQuda();

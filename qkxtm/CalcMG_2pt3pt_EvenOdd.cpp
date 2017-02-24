@@ -28,6 +28,11 @@
 #include <quda.h>
 #include <qudaQKXTM_Kepler.h>
 // Wilson, clover-improved Wilson, twisted mass, and domain wall are supported.
+
+//========================================================================//
+//====== P A R A M E T E R   S E T T I N G S   A N D   C H E C K S =======//
+//========================================================================//
+
 extern QudaDslashType dslash_type;
 extern bool tune;
 extern int device;
@@ -116,20 +121,6 @@ extern int Nproj;
 extern char proj_list_file[];
 
 extern char *corr_write_space;
-
-// //-C.K. ARPACK Parameters
-// extern int PolyDeg;
-// extern int nEv;
-// extern int nKv;
-// extern char *spectrumPart;
-// extern bool isACC;
-// extern double tolArpack;
-// extern int maxIterArpack;
-// extern char arpack_logfile[];
-// extern double amin;
-// extern double amax;
-//extern bool isEven;
-// extern bool isFullOp;
 
 namespace quda {
   extern void setTransferGPU(bool);
@@ -461,6 +452,10 @@ void setMultigridParam(QudaMultigridParam &mg_param) {
   inv_param.verbosity_precondition = QUDA_SUMMARIZE;
 }
 
+//=======================================================================//
+//== C O N T A I N E R   A N D   Q U D A   I N I T I A L I S A T I O N  =//
+//=======================================================================//
+
 int main(int argc, char **argv)
 {
   using namespace quda;
@@ -490,75 +485,6 @@ int main(int argc, char **argv)
   initRand();
 
   display_test_info();
-
-  // *** QUDA parameters begin here.
-
-  if (dslash_type != QUDA_TWISTED_MASS_DSLASH && 
-      dslash_type != QUDA_TWISTED_CLOVER_DSLASH && 
-      dslash_type != QUDA_CLOVER_WILSON_DSLASH){
-    printfQuda("This test is only for twisted mass or twisted clover operator\n");
-    exit(-1);
-  }
-
-  //QKXTM: DMH Use these for now, rename later
-  //qudaQKXTM_arpackInfo arpackInfo;
-  //arpackInfo.isEven = isEven;
-  //arpackInfo.isFullOp = isFullOp;
-
-  QudaGaugeParam gauge_param = newQudaGaugeParam();
-  setGaugeParam(gauge_param);
-
-  QudaInvertParam mg_inv_param = newQudaInvertParam();
-  QudaMultigridParam mg_param = newQudaMultigridParam();
-  mg_param.invert_param = &mg_inv_param;
-  setMultigridParam(mg_param);
-
-
-  QudaInvertParam inv_param = newQudaInvertParam();
-  setInvertParam(inv_param);
-
-  // declare the dimensions of the communication grid
-  initCommsGridQuda(4, gridsize_from_cmdline, NULL, NULL);
-  
-  setDims(gauge_param.X);
-  setSpinorSiteSize(24);
-
-  size_t gSize = (gauge_param.cpu_prec == QUDA_DOUBLE_PRECISION) ? 
-    sizeof(double) : sizeof(float);
-  size_t sSize = (inv_param.cpu_prec == QUDA_DOUBLE_PRECISION) ? 
-    sizeof(double) : sizeof(float);
-  
-  void *gauge[4], *clover_inv=0, *clover=0;
-  void *gauge_APE[4];
-  void *gaugeContract[4];
-
-  for (int dir = 0; dir < 4; dir++) {
-    gauge[dir] = malloc(V*gaugeSiteSize*gSize);
-    gauge_APE[dir] = malloc(V*gaugeSiteSize*gSize);
-    gaugeContract[dir] = malloc(V*gaugeSiteSize*gSize);
-    if( gauge[dir] == NULL || 
-	gauge_APE[dir] == NULL || 
-	gaugeContract[dir] == NULL ) 
-      errorQuda("error allocate memory host gauge field\n"); 
-  }
-  
-  // load in the command line supplied gauge field
-  readLimeGauge(gauge, latfile, &gauge_param, &inv_param, 
-		gridsize_from_cmdline);
-  applyBoundaryCondition(gauge, V/2 ,&gauge_param);
-  for(int mu = 0 ; mu < 4 ; mu++) {
-    memcpy(gaugeContract[mu],gauge[mu],V*9*2*sizeof(double));
-  }
-  mapEvenOddToNormalGauge(gaugeContract,gauge_param,xdim,ydim,zdim,tdim);
-
-  // load in the command line supplied smeared gauge field
-  // first read gauge field without apply BC  
-  readLimeGaugeSmeared(gauge_APE, latfile_smeared, &gauge_param, &inv_param,
-		       gridsize_from_cmdline);
-  mapEvenOddToNormalGauge(gauge_APE,gauge_param,xdim,ydim,zdim,tdim);
-  
-  // start the timer
-  double time0 = -((double)clock());
 
   //QKXTM: DMH qkxtm specfic inputs
   qudaQKXTMinfo_Kepler info;  
@@ -682,11 +608,75 @@ int main(int argc, char **argv)
     info.CorrSpace = POSITION_SPACE; 
   else fprintf(stderr,"Undefined option for --corr_write_space. Options are MOMENTUM(momentum)/POSITION(position)\n");
   //--------------------------------------------------
+
+  // QUDA parameters begin here.
+  //-----------------------------------------------------------------
+
+  if (dslash_type != QUDA_TWISTED_MASS_DSLASH && 
+      dslash_type != QUDA_TWISTED_CLOVER_DSLASH && 
+      dslash_type != QUDA_CLOVER_WILSON_DSLASH){
+    printfQuda("This test is only for twisted mass or twisted clover operator\n");
+    exit(-1);
+  }
+
+  QudaGaugeParam gauge_param = newQudaGaugeParam();
+  setGaugeParam(gauge_param);
+
+  QudaInvertParam mg_inv_param = newQudaInvertParam();
+  QudaMultigridParam mg_param = newQudaMultigridParam();
+  mg_param.invert_param = &mg_inv_param;
+  setMultigridParam(mg_param);
+
+
+  QudaInvertParam inv_param = newQudaInvertParam();
+  setInvertParam(inv_param);
+
+  // declare the dimensions of the communication grid
+  initCommsGridQuda(4, gridsize_from_cmdline, NULL, NULL);
   
+  setDims(gauge_param.X);
+  setSpinorSiteSize(24);
+
+  size_t gSize = (gauge_param.cpu_prec == QUDA_DOUBLE_PRECISION) ? 
+    sizeof(double) : sizeof(float);
+  size_t sSize = (inv_param.cpu_prec == QUDA_DOUBLE_PRECISION) ? 
+    sizeof(double) : sizeof(float);
+  
+  void *gauge[4], *clover_inv=0, *clover=0;
+  void *gauge_APE[4];
+  void *gaugeContract[4];
+
+  for (int dir = 0; dir < 4; dir++) {
+    gauge[dir] = malloc(V*gaugeSiteSize*gSize);
+    gauge_APE[dir] = malloc(V*gaugeSiteSize*gSize);
+    gaugeContract[dir] = malloc(V*gaugeSiteSize*gSize);
+    if( gauge[dir] == NULL || 
+	gauge_APE[dir] == NULL || 
+	gaugeContract[dir] == NULL ) 
+      errorQuda("error allocate memory host gauge field\n"); 
+  }
+  
+  // load in the command line supplied gauge field
+  readLimeGauge(gauge, latfile, &gauge_param, &inv_param, 
+		gridsize_from_cmdline);
+  applyBoundaryCondition(gauge, V/2 ,&gauge_param);
+  for(int mu = 0 ; mu < 4 ; mu++) {
+    memcpy(gaugeContract[mu],gauge[mu],V*9*2*sizeof(double));
+  }
+  mapEvenOddToNormalGauge(gaugeContract,gauge_param,xdim,ydim,zdim,tdim);
+
+  // load in the command line supplied smeared gauge field
+  // first read gauge field without apply BC  
+  readLimeGaugeSmeared(gauge_APE, latfile_smeared, &gauge_param, &inv_param,
+		       gridsize_from_cmdline);
+  mapEvenOddToNormalGauge(gauge_APE,gauge_param,xdim,ydim,zdim,tdim);
+  
+  // start the timer
+  double time0 = -((double)clock());
+
   // initialize the QUDA library
   initQuda(device);
-
-  // initialize QKXTM info
+  //Print remaining info to stdout
   init_qudaQKXTM_Kepler(&info);
   printf_qudaQKXTM_Kepler();
   
@@ -707,17 +697,6 @@ int main(int argc, char **argv)
   if (dslash_type == QUDA_TWISTED_CLOVER_DSLASH) 
     loadCloverQuda(NULL, NULL, &inv_param);
   printfQuda("After clover term\n");
-  
-  // // restore actual solve_type we want to do
-  // if(isFullOp){
-  //   inv_param.solve_type = QUDA_DIRECT_SOLVE;
-  //   printf("### Running for the Full Operator\n");
-  // }
-  // else{
-  //   inv_param.solve_type = QUDA_DIRECT_PC_SOLVE;
-  //   if(isEven) printf("### Running for the Even-Even Operator\n");
-  //   else       printf("### Running for the Odd-Odd Operator\n");
-  // }
   
   //QKXTM: DMH EXP
   // setup the multigrid solver for UP flavour
