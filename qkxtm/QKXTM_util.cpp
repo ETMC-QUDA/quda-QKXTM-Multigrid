@@ -1604,10 +1604,9 @@ char *corr_write_space = "MOMENTUM";
 
 //-C.K. loop Parameters
 int Nstoch = 100;     // Number of stochastic noise vectors
-unsigned long int seed   = 100;     // The seed for the stochastic noise vector generation
+unsigned long int seed   = 100;  // The seed for the stochastic vectors
 int Ndump  = 10;      // Write the loop every Ndump stoch. vectors
 char loop_fname[512] = "loop";
-char filename_dSteps[512]="none";
 char *loop_file_format = "ASCII";
 char source_type[257] = "random";
 bool useTSM = false;
@@ -1617,6 +1616,46 @@ int TSM_NdumpHP = 0;
 int TSM_NdumpLP = 0;
 long int TSM_maxiter = 0;
 double TSM_tol = 0;
+int smethod = 1;
+bool fullOp_stochEO = false;
+#ifdef HAVE_ARPACK
+//- Loop params with ARPACK enabled
+char filename_dSteps[512]="none";
+
+
+//-C.K. ARPACK Parameters
+char pathEigenVectorsUp[257] = "ev_u.0000";
+char pathEigenVectorsDown[257] = "ev_d.0000";
+char pathEigenValuesUp[257] = "evals_u.dat";
+char pathEigenValuesDown[257] = "evals_d.dat";
+
+int PolyDeg = 100;     // degree of the Chebysev polynomial
+int nEv = 100;         // Number of the eigenvectors we want
+int nKv = 200;         // total size of Krylov space
+char *spectrumPart = "SR"; // for which part of the spectrum we want to solve
+bool isACC = true;
+double tolArpack = 1.0e-5;
+int maxIterArpack = 100000;
+char arpack_logfile[512] = "arpack.log";
+double amin = 3.0e-4;
+double amax = 3.5;
+//bool isEven = false;
+bool isFullOp = false;
+
+//-C.K. ARPACK Parameters for Even-Odd preconditioning for the stochastic part when using the Full Operator
+int PolyDeg_EO = 100;     // degree of the Chebysev polynomial
+int nEv_EO = 100;         // Number of the eigenvectors we want
+int nKv_EO = 200;         // total size of Krylov space
+char *spectrumPart_EO = "SR"; // Which part of the spectrum we want to solve
+bool isACC_EO = true;
+double tolArpack_EO = 1.0e-5;
+int maxIterArpack_EO = 100000;
+char arpack_logfile_EO[512] = "arpack_EO.log";
+double amin_EO = 3.0e-4;
+double amax_EO = 3.5;
+bool isEven_EO = false;
+bool isFullOp_EO = false;
+#endif
 
 //===========//
 
@@ -1805,6 +1844,8 @@ void usage(char** argv )
   printf("    --loop-filename                           # File name to save loops (default \"loop\")\n");
   printf("    --loop-file-format                        # file format for the loops, ASCII/HDF5 (default \"ASCII_format\")\n");
   printf("    --source-type                             # Stochastic source type (unity/random) (default random)\n");
+  printf("    --stochEO                                 # Use EO precon for the stochastic part when using the Full Operator (yes/no, default: no\n");
+  printf("    --UseEven                                 # Whether to use Even-Even operator (yes/no, default no)\n");
   printf("    --useTSM                                  # Use (or not) the truncated solver method for the Full Operator (yes/no, default: no\n");
   printf("    --TSM-NHP                                 # Number of High-precision sources for TSM\n");
   printf("    --TSM-NLP                                 # Number of Low-precision sources for TSM\n");
@@ -1812,7 +1853,41 @@ void usage(char** argv )
   printf("    --TSM-NdumpLP                             # Every how many Low-precision sources to print for TSM\n");
   printf("    --TSM-maxiter                             # Set the iteration number as criterion for Low-precision sources for TSM\n");
   printf("    --TSM-tol                                 # Set the CG tolerance as criterion for Low-precision sources for TSM\n");
+#ifdef HAVE_ARPACK
+  printf("    --pathEigenVectorsUp                      # Path where the eigenVectors for up flavor are (default ev_u.0000)\n");
+  printf("    --pathEigenVectorsDown                    # Path where the eigenVectors for up flavor are (default ev_d.0000)\n");
+  printf("    --pathEigenValuesUp                       # Path where the eigenVectors for up flavor are (default evals_u.dat)\n");
+  printf("    --pathEigenValuesDown                     # Path where the eigenVectors for up flavor are (default evals_d.dat)\n");
 
+  //-C.K. ARPACK EXACT INPUT
+  printf("    --PolyDeg                                   # The degree of the polynomial Acceleration (default 100)\n");
+  printf("    --nEv                                       # Number of eigenvalues requested by ARPACK (default 100)\n");
+  printf("    --nKv                                       # Total size of the Krylov space used by ARPACK (default 200)\n");
+  printf("    --spectrumPart                              # Which part of the spectrum we need (Options: SR,LR,SM,LM,SI,LI, default SR)\n");
+  printf("    --isACC                                     # Whether we want to use polynomial acceleration (yes/no, default yes)\n");
+  printf("    --tolARPACK                                 # Tolerance for convergence, used by ARPACK (default 1.0e-5)\n");
+  printf("    --maxIterARPACK                             # Maximum iterations number for ARPACK (default 100000)\n");
+  printf("    --pathArpackLogfile                         # Path to the ARPACK log file (default  \"arpack.log\")\n");
+  printf("    --aminARPACK                                # amin parameter used in Cheb. Poly. Acc. (default 3.0e-4)\n");
+  printf("    --amaxARPACK                                # amax parameter used in Cheb. Poly. Acc. (default 3.5)\n");
+  printf("    --UseFullOp                                 # Whether to use the Full Operator (yes,no, default no)\n");
+  printf("    --defl_steps                                # File to deflation steps (default none)\n");
+
+  //-C.K. ARPACK STOCH INPUT
+  printf("    --PolyDeg-EO                                # The degree of the polynomial Acceleration (default 100)\n");
+  printf("    --nEv-EO                                    # Number of eigenvalues requested by ARPACK (default 100)\n");
+  printf("    --nKv-EO                                    # Total size of the Krylov space used by ARPACK (default 200)\n");
+  printf("    --spectrumPart                              # Which part of the spectrum we need (Options: SR,LR,SM,LM,SI,LI, default SR)\n");
+  printf("    --isACC-EO                                  # Whether we want to use polynomial acceleration (yes/no, default yes)\n");
+  printf("    --tolARPACK-EO                              # Tolerance for convergence, used by ARPACK (default 1.0e-5)\n");
+  printf("    --maxIterARPACK-EO                          # Maximum iterations number for ARPACK (default 100000)\n");
+  printf("    --pathArpackLogfile-EO                      # Path to the ARPACK log file (default  \"arpack.log\")\n");
+  printf("    --aminARPACK-EO                             # amin parameter used in Cheb. Poly. Acc. (default 3.0e-4)\n");
+  printf("    --amaxARPACK-EO                             # amax parameter used in Cheb. Poly. Acc. (default 3.5)\n");
+  printf("    --UseEven-EO                                # Whether to use Even-Even operator (yes/no, default no)\n");
+  printf("    --UseFullOp-EO                              # Whether to use the Full Operator (yes,no, default no)\n");
+  printf("    --defl_steps-EO                             # File to deflation steps (default none)\n");
+#endif
   //--------//
 
   printf("    --help                                    # Print out this message\n"); 
@@ -3025,6 +3100,16 @@ int process_command_line_option(int argc, char** argv, int* idx)
     ret = 0;
     goto out;
   }
+
+  if( strcmp(argv[i], "--stoch-method") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    smethod = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
  
   if( strcmp(argv[i], "--loop-filename") == 0){
     if (i+1 >= argc){
@@ -3055,7 +3140,7 @@ int process_command_line_option(int argc, char** argv, int* idx)
     ret = 0;
     goto out;
   }
- 
+
   if( strcmp(argv[i], "--useTSM") ==0){
     if(i+1 >= argc){
       usage(argv);
@@ -3132,15 +3217,336 @@ int process_command_line_option(int argc, char** argv, int* idx)
     if(i+1 >= argc){
       usage(argv);
     }
-    if( strcmp(argv[i+1],"yes")==0 || strcmp(argv[i+1],"YES")==0 ) isEven = true;
-    else if ( strcmp(argv[i+1],"no")==0 || strcmp(argv[i+1],"NO")==0 ) isEven = false;
+    if( strcmp(argv[i+1],"yes")==0 || 
+	strcmp(argv[i+1],"YES")==0 ) isEven = true;
+    else if ( strcmp(argv[i+1],"no")==0 || 
+	      strcmp(argv[i+1],"NO")==0 ) isEven = false;
+    else usage(argv);
+    i++;
+    ret = 0;
+    goto out;
+  }
+#ifdef HAVE_ARPACK
+  //-Loop info with ARPACK enabled
+  if( strcmp(argv[i], "--defl-steps") == 0){
+    if (i+1 >= argc){
+      usage(argv);
+    }
+    strcpy(filename_dSteps, argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  if( strcmp(argv[i], "--stochEO") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    if( strcmp(argv[i+1],"yes")==0 || 
+	strcmp(argv[i+1],"YES")==0 ) fullOp_stochEO = true;
+    else if ( strcmp(argv[i+1],"no")==0 || 
+	      strcmp(argv[i+1],"NO")==0 ) fullOp_stochEO = false;
     else usage(argv);
     i++;
     ret = 0;
     goto out;
   }
  
-  //=============================================================================
+  if( strcmp(argv[i], "--pathEigenVectorsUp") == 0){
+    if (i+1 >= argc){
+      usage(argv);
+    }     
+    strcpy(pathEigenVectorsUp, argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--pathEigenVectorsDown") == 0){
+    if (i+1 >= argc){
+      usage(argv);
+    }     
+    strcpy(pathEigenVectorsDown, argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--pathEigenValuesUp") == 0){
+    if (i+1 >= argc){
+      usage(argv);
+    }     
+    strcpy(pathEigenValuesUp, argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--pathEigenValuesDown") == 0){
+    if (i+1 >= argc){
+      usage(argv);
+    }     
+    strcpy(pathEigenValuesDown, argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  //-C.K. ARPACK INPUT
+  if( strcmp(argv[i], "--PolyDeg") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    PolyDeg = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+  
+  if( strcmp(argv[i], "--nEv") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    nEv = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+  
+  if( strcmp(argv[i], "--nKv") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    nKv = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+  
+
+  if( strcmp(argv[i], "--spectrumPart") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }    
+    spectrumPart = strdup(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  if( strcmp(argv[i], "--isACC") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    if( strcmp(argv[i+1],"yes")==0 || 
+	strcmp(argv[i+1],"YES")==0 ) isACC = true;
+    else if ( strcmp(argv[i+1],"no")==0 || 
+	      strcmp(argv[i+1],"NO")==0 ) isACC = false;
+    else usage(argv);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--tolARPACK") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    tolArpack = atof(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--maxIterARPACK") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    maxIterArpack = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--pathArpackLogfile") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    strcpy(arpack_logfile,argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--aminARPACK") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    amin = atof(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+
+  if( strcmp(argv[i], "--amaxARPACK") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    amax = atof(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  // if( strcmp(argv[i], "--UseEven") ==0){
+  //   if(i+1 >= argc){
+  //     usage(argv);
+  //   }
+  //   if( strcmp(argv[i+1],"yes")==0 || 
+  // 	strcmp(argv[i+1],"YES")==0 ) isEven = true;
+  //   else if ( strcmp(argv[i+1],"no")==0 || 
+  // 	      strcmp(argv[i+1],"NO")==0 ) isEven = false;
+  //   else usage(argv);
+  //   i++;
+  //   ret = 0;
+  //   goto out;
+  // }
+ 
+  if( strcmp(argv[i], "--UseFullOp") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    if( strcmp(argv[i+1],"yes")==0 || strcmp(argv[i+1],"YES")==0 ) isFullOp = true;
+    else if ( strcmp(argv[i+1],"no")==0 || strcmp(argv[i+1],"NO")==0 ) isFullOp = false;
+    else usage(argv);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  // C.K. ARPACK INPUT FOR EVEN-ODD PRECONDITIONING 
+  // (APPLICABLE ONLY WHEN USING THE FULL OPERATOR)
+  if( strcmp(argv[i], "--PolyDeg-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    PolyDeg_EO = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+  
+  if( strcmp(argv[i], "--nEv-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    nEv_EO = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+  
+  if( strcmp(argv[i], "--nKv-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    nKv_EO = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+  
+
+  if( strcmp(argv[i], "--spectrumPart-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }    
+    spectrumPart_EO = strdup(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  if( strcmp(argv[i], "--isACC-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    if( strcmp(argv[i+1],"yes")==0 || 
+	strcmp(argv[i+1],"YES")==0 ) isACC_EO = true;
+    else if ( strcmp(argv[i+1],"no")==0 || 
+	      strcmp(argv[i+1],"NO")==0 ) isACC_EO = false;
+    else usage(argv);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--tolARPACK-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    tolArpack_EO = atof(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--maxIterARPACK-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    maxIterArpack_EO = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--pathArpackLogfile-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    strcpy(arpack_logfile_EO,argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+ 
+  if( strcmp(argv[i], "--aminARPACK-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    amin_EO = atof(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+
+  if( strcmp(argv[i], "--amaxARPACK-EO") == 0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    amax_EO = atof(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  if( strcmp(argv[i], "--UseEven-EO") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    if( strcmp(argv[i+1],"yes")==0 || strcmp(argv[i+1],"YES")==0 ) isEven_EO = true;
+    else if ( strcmp(argv[i+1],"no")==0 || strcmp(argv[i+1],"NO")==0 ) isEven_EO = false;
+    else usage(argv);
+    i++;
+    ret = 0;
+    goto out;
+  }
+#endif
+ 
+  //-----------------------------------------------------------
 
   if( strcmp(argv[i], "--version") == 0){
     printf("This program is linked with QUDA library, version %s,", 

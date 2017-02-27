@@ -607,12 +607,6 @@ int main(int argc, char **argv)
     memcpy(gauge_Plaq[mu],gauge[mu],V*9*2*sizeof(double));
   mapEvenOddToNormalGauge(gauge_Plaq,gauge_param,xdim,ydim,zdim,tdim);
 
-  // load in the command line supplied smeared gauge field
-  // first read gauge field without apply BC  
-  readLimeGaugeSmeared(gauge_APE, latfile_smeared, &gauge_param, &inv_param,
-		       gridsize_from_cmdline);
-  mapEvenOddToNormalGauge(gauge_APE,gauge_param,xdim,ydim,zdim,tdim);
-
   // start the timer
   double time0 = -((double)clock());
 

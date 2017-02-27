@@ -713,7 +713,7 @@ int main(int argc, char **argv)
   mg_param.invert_param->twist_flavor = twist_flavor;  
 
 
-  calcMG_threepTwop_EvenOdd(gauge_APE, gaugeContract,&gauge_param,
+  calcMG_threepTwop_EvenOdd(gauge_APE, gaugeContract, &gauge_param,
 			    &inv_param, info, twop_filename,
 			    threep_filename, NEUTRON);
 
