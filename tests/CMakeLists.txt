@@ -2,9 +2,19 @@
 include_directories(.)
 #DMH
 if(QUDA_INTERFACE_QKXTM)
-include_directories(${QUDA_QKXTM_HDF5HOME}/src)
-include_directories(${QUDA_QKXTM_LIMEHOME}/include)
-include_directories(SYSTEM ${QUDA_QKXTM_GSLHOME}/include)
+  include_directories(../lib)
+  include_directories(../include)
+  include_directories(../tests)
+  include_directories(../lib/code_pieces_Kepler)
+  include_directories(${QUDA_QKXTM_HDF5HOME}/src)
+  include_directories(${QUDA_QKXTM_LIMEHOME}/include)
+  include_directories(SYSTEM ${QUDA_QKXTM_GSLHOME}/include)
+  if(QUDA_QKXTM_ARPACK)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/PARPACK/SRC/MPI)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/PARPACK/UTIL/MPI)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/SRC)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/UTIL)
+  endif(QUDA_QKXTM_ARPACK)  
 endif(QUDA_INTERFACE_QKXTM)
 #DMH
 
@@ -36,9 +46,13 @@ endif()
 
 #DMH
 if(QUDA_INTERFACE_QKXTM)
-LIST(APPEND TEST_LIBS ${QKXTM_GSL_LIB})
-LIST(APPEND TEST_LIBS ${QKXTM_HDF5_LIB})
-LIST(APPEND TEST_LIBS ${QKXTM_LIME_LIB})
+  LIST(APPEND TEST_LIBS ${QKXTM_GSL_LIB})
+  LIST(APPEND TEST_LIBS ${QKXTM_HDF5_LIB})
+  LIST(APPEND TEST_LIBS ${QKXTM_LIME_LIB})
+  if(QUDA_QKXTM_ARPACK)
+    LIST(APPEND TEST_LIBS ${QKXTM_PARPACK_LIB})
+    LIST(APPEND TEST_LIBS ${QKXTM_ARPACK_LIB})
+  endif(QUDA_QKXTM_ARPACK)
 endif(QUDA_INTERFACE_QKXTM)
 #DMH
 

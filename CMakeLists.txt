@@ -92,6 +92,7 @@ set(QUDA_INTERFACE_TIFR OFF CACHE BOOL "build tifr interface")
 
 #QKXTM: DMH
 set(QUDA_INTERFACE_QKXTM ON CACHE BOOL "build QKXTM interface")
+set(QUDA_QKXTM_ARPACK OFF CACHE BOOL "enable QKXTM ARPACK")
 if(QUDA_INTERFACE_QKXTM)
   # Locations for GSL HDF5 LIME OPENBLAS
   set(QUDA_QKXTM_GSLHOME "" CACHE PATH "path to GSL")
@@ -99,6 +100,10 @@ if(QUDA_INTERFACE_QKXTM)
   set(QUDA_QKXTM_HDF5HOME "" CACHE PATH "path to HDF5")
   set(QUDA_QKXTM_OPENBLAS_BUILD "" CACHE PATH "path to OPENBLAS_BUILD")
   set(QUDA_QKXTM_OPENBLAS_SRC "" CACHE PATH "path to OPENBLAS_SRC")
+
+  if(QUDA_QKXTM_ARPACK)
+    set(QUDA_QKXTM_ARPACKHOME "" CACHE PATH "path to ARPACK")
+  endif(QUDA_QKXTM_ARPACK)
 endif(QUDA_INTERFACE_QKXTM)
 #QKXTM: DMH
 
@@ -233,6 +238,17 @@ if(QUDA_INTERFACE_QKXTM)
   include_directories(lib/code_pieces)
   include_directories(lib/code_pieces_Kepler)
 
+  if(QUDA_QKXTM_ARPACK)
+    add_definitions(-DHAVE_ARPACK)
+    FIND_LIBRARY(QKXTM_PARPACK_LIB parpack  ${QUDA_QKXTM_ARPACKHOME})
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/PARPACK/SRC/MPI)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/PARPACK/UTIL/MPI)
+    
+    FIND_LIBRARY(QKXTM_ARPACK_LIB arpack ${QUDA_QKXTM_ARPACKHOME})
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/SRC)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/UTIL)
+  endif(QUDA_QKXTM_ARPACK)
+  
   LIST(APPEND QUDA_LIBS ${CUDA_cufft_LIBRARY} ${CUDA_curand_LIBRARY})
 
 endif(QUDA_INTERFACE_QKXTM)
@@ -436,7 +452,7 @@ SET(COMP_CAP "${COMP_CAP}0")
 add_definitions(-D__COMPUTE_CAPABILITY__=${COMP_CAP})
 
 
-# NVCC FLAGS independet off build type
+# NVCC FLAGS independet of build type
 set(QUDA_NVCC_FLAGS -std c++11 -arch=${QUDA_GPU_ARCH} -ftz=true -prec-div=false -prec-sqrt=false)
 
 if(QUDA_VERBOSE_BUILD)

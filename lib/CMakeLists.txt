@@ -50,6 +50,7 @@ set (QUDA_OBJS
 
 #DMH
 if(QUDA_INTERFACE_QKXTM)
+  #LIST(APPEND QUDA_OBJS qudaQKXTM_Kepler_kernels.cu qudaQKXTM_Kepler.cpp qudaQKXTM_Kepler_utils.cpp)
   LIST(APPEND QUDA_OBJS qudaQKXTM_Kepler_kernels.cu)
 endif(QUDA_INTERFACE_QKXTM)
 #DMH
@@ -81,10 +82,16 @@ include_directories(dslash_core)
 include_directories(.)
 #DMH
 if(QUDA_INTERFACE_QKXTM)
-include_directories(code_pieces_Kepler)
-include_directories(SYSTEM ${QUDA_QKXTM_GSLHOME}/include)
-include_directories(SYSTEM ${QUDA_QKXTM_HDF5HOME}/src)
-include_directories(SYSTEM ${QUDA_QKXTM_LIMEHOME}/include)
+  include_directories(code_pieces_Kepler)
+  include_directories(SYSTEM ${QUDA_QKXTM_GSLHOME}/include)
+  include_directories(SYSTEM ${QUDA_QKXTM_HDF5HOME}/src)
+  include_directories(SYSTEM ${QUDA_QKXTM_LIMEHOME}/include)
+  if(QUDA_QKXTM_ARPACK)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/PARPACK/SRC/MPI)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/PARPACK/UTIL/MPI)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/SRC)
+    include_directories(SYSTEM ${QUDA_QKXTM_ARPACKHOME}/UTIL)
+  endif(QUDA_QKXTM_ARPACK)
 endif(QUDA_INTERFACE_QKXTM)
 #DMH
 
@@ -94,9 +101,13 @@ cuda_add_library(quda STATIC $<TARGET_OBJECTS:quda_cpp> ${QUDA_CU_OBJS})
 
 #DMH
 if(QUDA_INTERFACE_QKXTM)
-LIST(APPEND quda ${QKXTM_GSL_LIB})
-LIST(APPEND quda ${QKXTM_HDF5_LIB})
-LIST(APPEND quda ${QKXTM_LIME_LIB})
+  LIST(APPEND quda ${QKXTM_GSL_LIB})
+  LIST(APPEND quda ${QKXTM_HDF5_LIB})
+  LIST(APPEND quda ${QKXTM_LIME_LIB})
+  if(QUDA_QKXTM_ARPACK)
+    LIST(APPEND quda ${QKXTM_PARPACK_LIB})
+    LIST(APPEND quda ${QKXTM_ARPACK_LIB})
+  endif(QUDA_QKXTM_ARPACK)
 endif(QUDA_INTERFACE_QKXTM)
 #DMH
 
