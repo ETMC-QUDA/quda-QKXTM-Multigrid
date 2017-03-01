@@ -1616,7 +1616,7 @@ int TSM_NdumpHP = 0;
 int TSM_NdumpLP = 0;
 long int TSM_maxiter = 0;
 double TSM_tol = 0;
-int smethod = 1;
+int smethod = 0;
 bool fullOp_stochEO = false;
 #ifdef HAVE_ARPACK
 //- Loop params with ARPACK enabled

@@ -62,19 +62,19 @@ extern int GK_timeSize;
 //Though only some template forward declarations
 //are needed presently, future development may require the
 //others, and are therefore placed here for convenience
-template  class QKXTM_Field_Kepler<double>;
-template  class QKXTM_Gauge_Kepler<double>;
-template  class QKXTM_Vector_Kepler<double>;
-template  class QKXTM_Propagator_Kepler<double>;
-template  class QKXTM_Propagator3D_Kepler<double>;
-template  class QKXTM_Vector3D_Kepler<double>;
+// template  class QKXTM_Field_Kepler<double>;
+// template  class QKXTM_Gauge_Kepler<double>;
+// template  class QKXTM_Vector_Kepler<double>;
+// template  class QKXTM_Propagator_Kepler<double>;
+// template  class QKXTM_Propagator3D_Kepler<double>;
+// template  class QKXTM_Vector3D_Kepler<double>;
 
-template  class QKXTM_Field_Kepler<float>;
-template  class QKXTM_Gauge_Kepler<float>;
-template  class QKXTM_Vector_Kepler<float>;
-template  class QKXTM_Propagator_Kepler<float>;
-template  class QKXTM_Propagator3D_Kepler<float>;
-template  class QKXTM_Vector3D_Kepler<float>;
+// template  class QKXTM_Field_Kepler<float>;
+// template  class QKXTM_Gauge_Kepler<float>;
+// template  class QKXTM_Vector_Kepler<float>;
+// template  class QKXTM_Propagator_Kepler<float>;
+// template  class QKXTM_Propagator3D_Kepler<float>;
+// template  class QKXTM_Vector3D_Kepler<float>;
 
 static bool exists_file (const char* name) {
   return ( access( name, F_OK ) != -1 );
@@ -136,7 +136,7 @@ void testGaussSmearing(void **gauge){
 }
 
 //SOURCE_T RANDOM: Constructs a Z_4 random source using 
-//                 usng gsl as RNG.
+//                 gsl as RNG.
 //SOURCE_T UNITY:  Constructs a momentum source with p=0.
 template <typename Float>
 void getStochasticRandomSource(void *spinorIn, gsl_rng *rNum, 
@@ -170,531 +170,6 @@ void getStochasticRandomSource(void *spinorIn, gsl_rng *rNum,
       errorQuda("Source type not set correctly!! Aborting.\n");
     }
   }
-
-}
-
-/* Quarantined code
-template <typename Float>
-void getStochasticRandomSource(void *spinorIn, gsl_rng *rNum){
-  memset(spinorIn,0,GK_localVolume*12*2*sizeof(Float));
-
-  for(int i = 0; i<GK_localVolume*12; i++){
-
-    //- Unity sources
-    //    ((Float*) spinorIn)[i*2] = 1.0;
-    //    ((Float*) spinorIn)[i*2+1] = 0.0;
-
-    //- Random sources
-    int randomNumber = gsl_rng_uniform_int(rNum, 4);
-    switch  (randomNumber)
-      {
-      case 0:
-	((Float*) spinorIn)[i*2] = 1.;
-	break;
-      case 1:
-	((Float*) spinorIn)[i*2] = -1.;
-	break;
-      case 2:
-	((Float*) spinorIn)[i*2+1] = 1.;
-	break;
-      case 3:
-	((Float*) spinorIn)[i*2+1] = -1.;
-	break;
-      }
-
-  }//-for
-
-}
-*/
-
-
-template<typename Float>
-void oneEndTrick_w_One_Der(ColorSpinorField &x, ColorSpinorField &tmp3, 
-			   ColorSpinorField &tmp4, QudaInvertParam *param, 
-			   void *cnRes_gv,void *cnRes_vv, void **cnD_gv, 
-			   void **cnD_vv, void **cnC_gv, void **cnC_vv){
-  
-  void *h_ctrn, *ctrnS, *ctrnC;
-  
-  if((cudaMallocHost(&h_ctrn, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3])) == cudaErrorMemoryAllocation)
-    errorQuda("Error allocating memory for contraction results in CPU.\n");
-  cudaMemset(h_ctrn, 0, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]);
-
-  if((cudaMalloc(&ctrnS, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3])) == cudaErrorMemoryAllocation)
-    errorQuda("Error allocating memory for contraction results in GPU.\n");
-  cudaMemset(ctrnS, 0, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]);
-
-  if((cudaMalloc(&ctrnC, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3])) == cudaErrorMemoryAllocation)
-    errorQuda("Error allocating memory for contraction results in GPU.\n");
-  cudaMemset(ctrnC, 0, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]);
-
-  checkCudaError();
-  
-  DiracParam dWParam;
-  dWParam.matpcType        = QUDA_MATPC_EVEN_EVEN;
-  dWParam.dagger           = QUDA_DAG_NO;
-  dWParam.gauge            = gaugePrecise;
-  dWParam.kappa            = param->kappa;
-  dWParam.mass             = 1./(2.*param->kappa) - 4.;
-  dWParam.m5               = 0.;
-  dWParam.mu               = 0.;
-  for     (int i=0; i<4; i++)
-    dWParam.commDim[i]       = 1;
-
-  if(param->dslash_type == QUDA_TWISTED_CLOVER_DSLASH) {
-    dWParam.type           = QUDA_CLOVER_DIRAC;
-    dWParam.clover                 = cloverPrecise;
-    DiracClover   *dW      = new DiracClover(dWParam);
-    dW->M(tmp4,x);
-    delete  dW;
-  } 
-  else if (param->dslash_type == QUDA_TWISTED_MASS_DSLASH) {
-    dWParam.type           = QUDA_WILSON_DIRAC;
-    DiracWilson   *dW      = new DiracWilson(dWParam);
-    dW->M(tmp4,x);
-    delete  dW;
-  }
-  else{
-    errorQuda("Error one end trick works only for twisted mass fermions\n");
-  }
-  checkCudaError();
-
-  gamma5Cuda(static_cast<cudaColorSpinorField*>(&tmp3.Even()), 
-	     static_cast<cudaColorSpinorField*>(&tmp4.Even()));
-  gamma5Cuda(static_cast<cudaColorSpinorField*>(&tmp3.Odd()), 
-	     static_cast<cudaColorSpinorField*>(&tmp4.Odd()));
-  
-  long int sizeBuffer;
-  sizeBuffer = 
-    sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3];
-
-  int NN = 16*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3];
-  int incx = 1;
-  int incy = 1;
-  Float pceval[2] = {1.0,0.0};
-  Float mceval[2] = {-1.0,0.0};
-
-  ///////////////// LOCAL ///////////////////////////
-  contract(x, tmp3, ctrnS, QUDA_CONTRACT_GAMMA5);
-  cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-  
-  if( typeid(Float) == typeid(float) ) 
-    cblas_caxpy(NN,(void*)pceval,(void*)h_ctrn,incx,(void*)cnRes_gv,incy);
-  else if( typeid(Float) == typeid(double) ) 
-    cblas_zaxpy(NN,(void*)pceval,(void*)h_ctrn,incx,(void*)cnRes_gv,incy);
-  
-  //    for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-  //      ((Float*) cnRes_gv)[ix] += ((Float*)h_ctrn)[ix]; // generalized one end trick
-  
-  contract(x, x, ctrnS, QUDA_CONTRACT_GAMMA5);
-  cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-  
-  //    for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-  //      ((Float*) cnRes_vv)[ix] -= ((Float*)h_ctrn)[ix]; // standard one end trick
-  
-  if( typeid(Float) == typeid(float) ) {
-    cblas_caxpy(NN, (void*) mceval, (void*) h_ctrn, incx, 
-		(void*) cnRes_vv, incy);
-  }
-  else if( typeid(Float) == typeid(double) ) {
-    cblas_zaxpy(NN, (void*) mceval, (void*) h_ctrn, incx, 
-		(void*) cnRes_vv, incy);
-  }  
-  cudaDeviceSynchronize();
-  
-  ////////////////// DERIVATIVES //////////////////////////////
-  CovD *cov = new CovD(gaugePrecise, profileCovDev);
-
-  // for generalized one-end trick
-  for(int mu=0; mu<4; mu++)	
-    {
-      cov->M(tmp4,tmp3,mu);
-      // Term 0
-      contract(x, tmp4, ctrnS, QUDA_CONTRACT_GAMMA5);
-
-      cov->M  (tmp4, x,  mu+4);
-      // Term 0 + Term 3
-      contract(tmp4, tmp3, ctrnS, QUDA_CONTRACT_GAMMA5_PLUS);
-      cudaMemcpy(ctrnC, ctrnS, sizeBuffer, cudaMemcpyDeviceToDevice);
-
-      // Term 0 + Term 3 + Term 2 (C Sum)
-      cov->M  (tmp4, x, mu);
-      contract(tmp4, tmp3, ctrnC, QUDA_CONTRACT_GAMMA5_PLUS);
-      // Term 0 + Term 3 - Term 2 (D Dif)
-      contract(tmp4, tmp3, ctrnS, QUDA_CONTRACT_GAMMA5_MINUS);
-
-      cov->M  (tmp4, tmp3,  mu+4);
-      // Term 0 + Term 3 + Term 2 + Term 1 (C Sum)
-      contract(x, tmp4, ctrnC, QUDA_CONTRACT_GAMMA5_PLUS);
-      // Term 0 + Term 3 - Term 2 - Term 1 (D Dif)
-      contract(x, tmp4, ctrnS, QUDA_CONTRACT_GAMMA5_MINUS);
-      cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      if( typeid(Float) == typeid(float) ) {
-	cblas_caxpy(NN, (void*) pceval, (void*) h_ctrn, incx, 
-		    (void*) cnD_gv[mu], incy);
-      }
-      else if( typeid(Float) == typeid(double) ) {
-	cblas_zaxpy(NN, (void*) pceval, (void*) h_ctrn, incx, 
-		    (void*) cnD_gv[mu], incy);
-      }
-      //      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-      //	((Float *) cnD_gv[mu])[ix] += ((Float*)h_ctrn)[ix];
-      
-      cudaMemcpy(h_ctrn, ctrnC, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      if( typeid(Float) == typeid(float) ) {
-	cblas_caxpy(NN, (void*) pceval, (void*) h_ctrn, incx, 
-		    (void*) cnC_gv[mu], incy);
-      }
-      else if( typeid(Float) == typeid(double) ) {
-	cblas_zaxpy(NN, (void*) pceval, (void*) h_ctrn, incx, 
-		    (void*) cnC_gv[mu], incy);
-      }
-      //      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-      //	((Float *) cnC_gv[mu])[ix] += ((Float*)h_ctrn)[ix];
-    }
-  
-  for(int mu=0; mu<4; mu++) // for standard one-end trick
-    {
-      cov->M  (tmp4, x,  mu);
-      cov->M  (tmp3, x,  mu+4);
-      // Term 0
-      contract(x, tmp4, ctrnS, QUDA_CONTRACT_GAMMA5);
-      // Term 0 + Term 3
-      contract(tmp3, x, ctrnS, QUDA_CONTRACT_GAMMA5_PLUS);
-      cudaMemcpy(ctrnC, ctrnS, sizeBuffer, cudaMemcpyDeviceToDevice);
-      
-      // Term 0 + Term 3 + Term 2 (C Sum)
-      contract(tmp4, x, ctrnC, QUDA_CONTRACT_GAMMA5_PLUS);
-      // Term 0 + Term 3 - Term 2 (D Dif)
-      contract(tmp4, x, ctrnS, QUDA_CONTRACT_GAMMA5_MINUS);
-      // Term 0 + Term 3 + Term 2 + Term 1 (C Sum)
-      contract(x, tmp3, ctrnC, QUDA_CONTRACT_GAMMA5_PLUS);
-      // Term 0 + Term 3 - Term 2 - Term 1 (D Dif)                          
-      contract(x, tmp3, ctrnS, QUDA_CONTRACT_GAMMA5_MINUS);
-      cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      if( typeid(Float) == typeid(float) ) {
-	cblas_caxpy(NN, (void*) mceval, (void*) h_ctrn, incx, 
-		    (void*) cnD_vv[mu], incy);
-      }
-      else if( typeid(Float) == typeid(double) ) { 
-	cblas_zaxpy(NN, (void*) mceval, (void*) h_ctrn, incx, 
-		    (void*) cnD_vv[mu], incy);
-      }
-      //      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-      //	((Float *) cnD_vv[mu])[ix]  -= ((Float*)h_ctrn)[ix];
-      
-      cudaMemcpy(h_ctrn, ctrnC, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      if( typeid(Float) == typeid(float) ) {
-	cblas_caxpy(NN, (void*) mceval, (void*) h_ctrn, incx, 
-		    (void*) cnC_vv[mu], incy);
-      }
-      else if( typeid(Float) == typeid(double) ) {
-	cblas_zaxpy(NN, (void*) mceval, (void*) h_ctrn, incx, 
-		    (void*) cnC_vv[mu], incy);
-      }
-      
-      //      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-      //	((Float *) cnC_vv[mu])[ix] -= ((Float*)h_ctrn)[ix];
-    }
-  
-  delete cov;
-  cudaFreeHost(h_ctrn);
-  cudaFree(ctrnS);
-  cudaFree(ctrnC);
-  checkCudaError();
-}
-
-
-/* Quarantined Code
-template<typename Float>
-void oneEndTrick_w_One_Der_2(cudaColorSpinorField &s,
-			     cudaColorSpinorField &x,
-			     cudaColorSpinorField &tmp3, 
-			     cudaColorSpinorField &tmp4,
-			     QudaInvertParam *param, 
-			     void *cnRes_gv, void *cnRes_vv, 
-			     void **cnD_gv, void **cnD_vv, 
-			     void **cnC_gv, void **cnC_vv){
-  void *h_ctrn, *ctrnS, *ctrnC;
-
-  double t1,t2;
-
-  if((cudaMallocHost(&h_ctrn, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3])) == cudaErrorMemoryAllocation)
-    errorQuda("Error allocating memory for contraction results in CPU.\n");
-  cudaMemset(h_ctrn, 0, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]);
-
-  if((cudaMalloc(&ctrnS, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3])) == cudaErrorMemoryAllocation)
-    errorQuda("Error allocating memory for contraction results in GPU.\n");
-  cudaMemset(ctrnS, 0, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]);
-
-  if((cudaMalloc(&ctrnC, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3])) == cudaErrorMemoryAllocation)
-    errorQuda("Error allocating memory for contraction results in GPU.\n");
-  cudaMemset(ctrnC, 0, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]);
-
-  checkCudaError();
-  
-  DiracParam dWParam;
-  dWParam.matpcType        = QUDA_MATPC_EVEN_EVEN;
-  dWParam.dagger           = QUDA_DAG_NO;
-  dWParam.gauge            = gaugePrecise;
-  dWParam.kappa            = param->kappa;
-  dWParam.mass             = 1./(2.*param->kappa) - 4.;
-  dWParam.m5               = 0.;
-  dWParam.mu               = 0.;
-  for     (int i=0; i<4; i++)
-    dWParam.commDim[i]       = 1;
-
-  if(param->dslash_type == QUDA_TWISTED_CLOVER_DSLASH) {
-    dWParam.type           = QUDA_CLOVER_DIRAC;
-    dWParam.clover                 = cloverPrecise;
-    DiracClover   *dW      = new DiracClover(dWParam);
-    dW->M(tmp4,x);
-    delete  dW;
-  } 
-  else if (param->dslash_type == QUDA_TWISTED_MASS_DSLASH) {
-    dWParam.type           = QUDA_WILSON_DIRAC;
-    DiracWilson   *dW      = new DiracWilson(dWParam);
-    dW->M(tmp4,x);
-    delete  dW;
-  }
-  else{
-    errorQuda("Error one end trick works only for twisted mass fermions\n");
-  }
-  checkCudaError();
-
-  gamma5Cuda(static_cast<cudaColorSpinorField*>(&tmp3.Even()), static_cast<cudaColorSpinorField*>(&tmp4.Even()));
-  gamma5Cuda(static_cast<cudaColorSpinorField*>(&tmp3.Odd()), static_cast<cudaColorSpinorField*>(&tmp4.Odd()));
-
-  long int sizeBuffer;
-  sizeBuffer = sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3];
-  CovD *cov = new CovD(gaugePrecise, profileCovDev);
-
-  ///////////////// LOCAL ///////////////////////////
-  contract(s, x, ctrnS, QUDA_CONTRACT_GAMMA5);
-  cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-
-  for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-    ((Float*) cnRes_vv)[ix] -= ((Float*)h_ctrn)[ix]; // standard one end trick
-
-
-  contract(s, tmp3, ctrnS, QUDA_CONTRACT_GAMMA5);
-  cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-
-  for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-    ((Float*) cnRes_gv)[ix] += ((Float*)h_ctrn)[ix]; // generalized one end trick
-
-  cudaDeviceSynchronize();
-
-  ////////////////// DERIVATIVES //////////////////////////////
-  for(int mu=0; mu<4; mu++)	// for generalized one-end trick
-    {
-      cov->M(tmp4,tmp3,mu);
-      contract(s, tmp4, ctrnS, QUDA_CONTRACT_GAMMA5); // Term 0
-
-      cov->M  (tmp4, s,  mu+4);
-      contract(tmp4, tmp3, ctrnS, QUDA_CONTRACT_GAMMA5_PLUS);               // Term 0 + Term 3
-      cudaMemcpy(ctrnC, ctrnS, sizeBuffer, cudaMemcpyDeviceToDevice);
-
-      cov->M  (tmp4, s, mu);
-      contract(tmp4, tmp3, ctrnC, QUDA_CONTRACT_GAMMA5_PLUS);               // Term 0 + Term 3 + Term 2 (C Sum)                                                             
-      contract(tmp4, tmp3, ctrnS, QUDA_CONTRACT_GAMMA5_MINUS);              // Term 0 + Term 3 - Term 2 (D Dif)  
-
-      cov->M  (tmp4, tmp3,  mu+4);
-      contract(s, tmp4, ctrnC, QUDA_CONTRACT_GAMMA5_PLUS);                  // Term 0 + Term 3 + Term 2 + Term 1 (C Sum)                                                 
-      contract(s, tmp4, ctrnS, QUDA_CONTRACT_GAMMA5_MINUS);                 // Term 0 + Term 3 - Term 2 - Term 1 (D Dif)                                                             
-      cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-	((Float *) cnD_gv[mu])[ix] += ((Float*)h_ctrn)[ix];
-      
-      cudaMemcpy(h_ctrn, ctrnC, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-	((Float *) cnC_gv[mu])[ix] += ((Float*)h_ctrn)[ix];
-    }
-
-  for(int mu=0; mu<4; mu++) // for standard one-end trick
-    {
-      cov->M  (tmp4, x,  mu);
-      cov->M  (tmp3, s,  mu+4);
-
-      contract(s, tmp4, ctrnS, QUDA_CONTRACT_GAMMA5);                       // Term 0                                                                     
-      contract(tmp3, x, ctrnS, QUDA_CONTRACT_GAMMA5_PLUS);                  // Term 0 + Term 3                                                                     
-      cudaMemcpy(ctrnC, ctrnS, sizeBuffer, cudaMemcpyDeviceToDevice);
-
-      cov->M  (tmp4, s,  mu);
-      contract(tmp4, x, ctrnC, QUDA_CONTRACT_GAMMA5_PLUS);                  // Term 0 + Term 3 + Term 2 (C Sum)                                                             
-      contract(tmp4, x, ctrnS, QUDA_CONTRACT_GAMMA5_MINUS);                 // Term 0 + Term 3 - Term 2 (D Dif)                                                             
-
-      cov->M  (tmp3, x,  mu+4);
-      contract(s, tmp3, ctrnC, QUDA_CONTRACT_GAMMA5_PLUS);                  // Term 0 + Term 3 + Term 2 + Term 1 (C Sum)                                                    
-      contract(s, tmp3, ctrnS, QUDA_CONTRACT_GAMMA5_MINUS);                 // Term 0 + Term 3 - Term 2 - Term 1 (D Dif)                                                     
-
-      cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-	((Float *) cnD_vv[mu])[ix]  -= ((Float*)h_ctrn)[ix];
-      
-      cudaMemcpy(h_ctrn, ctrnC, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-	((Float *) cnC_vv[mu])[ix] -= ((Float*)h_ctrn)[ix];
-      
-    }
-
-  ///////////////
-
-  delete cov;
-  cudaFreeHost(h_ctrn);
-  cudaFree(ctrnS);
-  cudaFree(ctrnC);
-  checkCudaError();
-}
-*/
-
-
-/* Quarantined Code 
-template<typename Float>
-void volumeSource_w_One_Der(ColorSpinorField &x,
-			    ColorSpinorField &xi,
-			    ColorSpinorField &tmp,
-			    QudaInvertParam *param, 
-			    void *cn_local,
-			    void **cnD,void **cnC){
-  void *h_ctrn, *ctrnS, *ctrnC;
-
-  if((cudaMallocHost(&h_ctrn, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3])) == cudaErrorMemoryAllocation)
-    errorQuda("Error allocating memory for contraction results in CPU.\n");
-  cudaMemset(h_ctrn, 0, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]);
-
-  if((cudaMalloc(&ctrnS, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3])) == cudaErrorMemoryAllocation)
-    errorQuda("Error allocating memory for contraction results in GPU.\n");
-  cudaMemset(ctrnS, 0, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]);
-
-  if((cudaMalloc(&ctrnC, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3])) == cudaErrorMemoryAllocation)
-    errorQuda("Error allocating memory for contraction results in GPU.\n");
-  cudaMemset(ctrnC, 0, sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]);
-
-
-  long int sizeBuffer;
-  sizeBuffer = sizeof(Float)*32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3];
-  CovD *cov = new CovD(gaugePrecise, profileCovDev);
-
-  ///////////////// LOCAL ///////////////////////////
-  contract(xi, x, ctrnS, QUDA_CONTRACT);
-  cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-
-  for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-    ((Float*) cn_local)[ix] += ((Float*)h_ctrn)[ix]; // generalized one end trick
-
-  ////////////////// DERIVATIVES //////////////////////////////
-  for(int mu=0; mu<4; mu++) // for standard one-end trick
-    {
-      cov->M  (tmp, x,  mu); // Term 0
-      contract(xi, tmp, ctrnS, QUDA_CONTRACT);
-      cudaMemcpy(ctrnC, ctrnS, sizeBuffer, cudaMemcpyDeviceToDevice);
-
-      cov->M  (tmp, x,  mu+4); // Term 1
-      contract(xi, tmp, ctrnS, QUDA_CONTRACT_MINUS); // Term 0 - Term 1
-      contract(xi, tmp, ctrnC, QUDA_CONTRACT_PLUS); // Term 0 + Term 1
-
-      cov->M(tmp, xi,  mu); // Term 2
-      contract(tmp, x, ctrnS, QUDA_CONTRACT_MINUS); // Term 0 - Term 1 - Term 2
-      contract(tmp, x, ctrnC, QUDA_CONTRACT_PLUS); // Term 0 + Term 1 + Term 2
-
-      cov->M(tmp, xi,  mu+4); // Term 3
-      contract(tmp, x, ctrnS, QUDA_CONTRACT_PLUS); // Term 0 - Term 1 - Term 2 + Term 3
-      contract(tmp, x, ctrnC, QUDA_CONTRACT_PLUS); // Term 0 + Term 1 + Term 2 + Term 3
-
-      cudaMemcpy(h_ctrn, ctrnS, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-	((Float *) cnD[mu])[ix]  += ((Float*)h_ctrn)[ix];
-      
-      cudaMemcpy(h_ctrn, ctrnC, sizeBuffer, cudaMemcpyDeviceToHost);
-      
-      for(int ix=0; ix < 32*GK_localL[0]*GK_localL[1]*GK_localL[2]*GK_localL[3]; ix++)
-	((Float *) cnC[mu])[ix] += ((Float*)h_ctrn)[ix];
-    }
-  ///////////////
-
-  delete cov;
-  cudaFreeHost(h_ctrn);
-  cudaFree(ctrnS);
-  cudaFree(ctrnC);
-  checkCudaError();
-}
-*/
-
-/* Quarantined Code
-template <typename Float>
-void doCudaFFT(void *cnRes_gv, void *cnRes_vv, void *cnResTmp_gv,void *cnResTmp_vv){
-  static cufftHandle      fftPlan;
-  static int              init = 0;
-  int                     nRank[3]         = {GK_localL[0], GK_localL[1], GK_localL[2]};
-  const int               Vol              = GK_localL[0]*GK_localL[1]*GK_localL[2];
-  static cudaStream_t     streamCuFFT;
-  cudaStreamCreate(&streamCuFFT);
-
-  if(cufftPlanMany(&fftPlan, 3, nRank, nRank, 1, Vol, nRank, 1, Vol, CUFFT_Z2Z, 16*GK_localL[3]) != CUFFT_SUCCESS) errorQuda("Error in the FFT!!!\n");
-  cufftSetCompatibilityMode       (fftPlan, CUFFT_COMPATIBILITY_FFTW_PADDING);
-  cufftSetStream                  (fftPlan, streamCuFFT);
-  checkCudaError();
-  void* ctrnS;
-  if((cudaMalloc(&ctrnS, sizeof(Float)*32*Vol*GK_localL[3])) == cudaErrorMemoryAllocation) errorQuda("Error with memory allocation\n");
-
-  cudaMemcpy(ctrnS, cnRes_vv, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyHostToDevice);
-  if(typeid(Float) == typeid(double))if(cufftExecZ2Z(fftPlan, (double2 *) ctrnS, (double2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
-  if(typeid(Float) == typeid(float))if(cufftExecC2C(fftPlan, (float2 *) ctrnS, (float2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
-  cudaMemcpy(cnResTmp_vv, ctrnS, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyDeviceToHost);
-
-  cudaMemcpy(ctrnS, cnRes_gv, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyHostToDevice);
-  if(typeid(Float) == typeid(double))if(cufftExecZ2Z(fftPlan, (double2 *) ctrnS, (double2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
-  if(typeid(Float) == typeid(float))if(cufftExecC2C(fftPlan, (float2 *) ctrnS, (float2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
-  cudaMemcpy(cnResTmp_gv, ctrnS, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyDeviceToHost);
-
-
-  cudaFree(ctrnS);
-  cufftDestroy            (fftPlan);
-  cudaStreamDestroy       (streamCuFFT);
-  checkCudaError();
-}
-*/
-
-template <typename Float>
-void doCudaFFT_v2(void *cnIn, void *cnOut){
-  static cufftHandle fftPlan;
-  static int init = 0;
-  int nRank[3] = {GK_localL[0], GK_localL[1], GK_localL[2]};
-  const int Vol = GK_localL[0]*GK_localL[1]*GK_localL[2];
-  static cudaStream_t     streamCuFFT;
-  cudaStreamCreate(&streamCuFFT);
-
-  if(cufftPlanMany(&fftPlan, 3, nRank, nRank, 1, Vol, nRank, 
-		   1, Vol, CUFFT_Z2Z, 16*GK_localL[3]) != CUFFT_SUCCESS) 
-    errorQuda("Error in the FFT!!!\n");
-
-  cufftSetCompatibilityMode(fftPlan, CUFFT_COMPATIBILITY_FFTW_PADDING);
-  cufftSetStream           (fftPlan, streamCuFFT);
-  checkCudaError();
-  void* ctrnS;
-  if((cudaMalloc(&ctrnS, sizeof(Float)*32*Vol*GK_localL[3])) == 
-     cudaErrorMemoryAllocation) errorQuda("Error with memory allocation\n");
-
-  cudaMemcpy(ctrnS, cnIn, sizeof(Float)*32*Vol*GK_localL[3], 
-	     cudaMemcpyHostToDevice);
-  if(typeid(Float) == typeid(double))if(cufftExecZ2Z(fftPlan, (double2 *) ctrnS, (double2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
-  if(typeid(Float) == typeid(float))if(cufftExecC2C(fftPlan, (float2 *) ctrnS, (float2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
-  cudaMemcpy(cnOut, ctrnS, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyDeviceToHost);
-
-  cudaFree(ctrnS);
-  cufftDestroy            (fftPlan);
-  cudaStreamDestroy       (streamCuFFT);
-  checkCudaError();
 }
 
 static int** allocateMomMatrix(int Q_sq){
@@ -732,6 +207,41 @@ static int** allocateMomMatrix(int Q_sq){
       }
   return mom;
 }
+
+
+
+template <typename Float>
+void doCudaFFT_v2(void *cnIn, void *cnOut){
+  static cufftHandle fftPlan;
+  static int init = 0;
+  int nRank[3] = {GK_localL[0], GK_localL[1], GK_localL[2]};
+  const int Vol = GK_localL[0]*GK_localL[1]*GK_localL[2];
+  static cudaStream_t     streamCuFFT;
+  cudaStreamCreate(&streamCuFFT);
+
+  if(cufftPlanMany(&fftPlan, 3, nRank, nRank, 1, Vol, nRank, 
+		   1, Vol, CUFFT_Z2Z, 16*GK_localL[3]) != CUFFT_SUCCESS) 
+    errorQuda("Error in the FFT!!!\n");
+
+  cufftSetCompatibilityMode(fftPlan, CUFFT_COMPATIBILITY_FFTW_PADDING);
+  cufftSetStream           (fftPlan, streamCuFFT);
+  checkCudaError();
+  void* ctrnS;
+  if((cudaMalloc(&ctrnS, sizeof(Float)*32*Vol*GK_localL[3])) == 
+     cudaErrorMemoryAllocation) errorQuda("Error with memory allocation\n");
+
+  cudaMemcpy(ctrnS, cnIn, sizeof(Float)*32*Vol*GK_localL[3], 
+	     cudaMemcpyHostToDevice);
+  if(typeid(Float) == typeid(double))if(cufftExecZ2Z(fftPlan, (double2 *) ctrnS, (double2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
+  if(typeid(Float) == typeid(float))if(cufftExecC2C(fftPlan, (float2 *) ctrnS, (float2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
+  cudaMemcpy(cnOut, ctrnS, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyDeviceToHost);
+
+  cudaFree(ctrnS);
+  cufftDestroy            (fftPlan);
+  cudaStreamDestroy       (streamCuFFT);
+  checkCudaError();
+}
+
 
 //-C.K. Added this function for convenience, when writing the 
 //loops in the new ASCII format of the HDF5 format
@@ -840,7 +350,8 @@ void performFFT(Float *outBuf, void *inBuf, int iPrint,
 }
 
 template<typename Float>
-void copyLoopToWriteBuf(Float *writeBuf, void *tmpBuf, int iPrint, int Q_sq, int Nmoms, int **mom){
+void copyLoopToWriteBuf(Float *writeBuf, void *tmpBuf, int iPrint, 
+			int Q_sq, int Nmoms, int **mom){
 
   if(GK_nProc[2]==1){
     long int SplV = GK_localL[0]*GK_localL[1]*GK_localL[2];
@@ -862,9 +373,49 @@ void copyLoopToWriteBuf(Float *writeBuf, void *tmpBuf, int iPrint, int Q_sq, int
 
 }
 
+/* Quarantined code
+template <typename Float>
+void getStochasticRandomSource(void *spinorIn, gsl_rng *rNum){
+  memset(spinorIn,0,GK_localVolume*12*2*sizeof(Float));
+
+  for(int i = 0; i<GK_localVolume*12; i++){
+
+    //- Unity sources
+    //    ((Float*) spinorIn)[i*2] = 1.0;
+    //    ((Float*) spinorIn)[i*2+1] = 0.0;
+
+    //- Random sources
+    int randomNumber = gsl_rng_uniform_int(rNum, 4);
+    switch  (randomNumber)
+      {
+      case 0:
+	((Float*) spinorIn)[i*2] = 1.;
+	break;
+      case 1:
+	((Float*) spinorIn)[i*2] = -1.;
+	break;
+      case 2:
+	((Float*) spinorIn)[i*2+1] = 1.;
+	break;
+      case 3:
+	((Float*) spinorIn)[i*2+1] = -1.;
+	break;
+      }
+
+  }//-for
+
+}
+*/
+
+
+/* Moved to qudaQKXTM_Loops_Kepler.cpp 
 //-C.K. This is a new function to print all the loops in ASCII format
 template<typename Float>
-void writeLoops_ASCII(Float *writeBuf, const char *Pref, qudaQKXTM_loopInfo loopInfo, int **momQsq, int type, int mu, bool exact_loop, bool useTSM, bool LowPrec){
+void writeLoops_ASCII(Float *writeBuf, const char *Pref, 
+		      qudaQKXTM_loopInfo loopInfo, 
+		      int **momQsq, int type, 
+		      int mu, bool exact_loop, 
+		      bool useTSM, bool LowPrec){
   
   if(exact_loop && useTSM) errorQuda("writeLoops_ASCII: Got conflicting options - exact_loop AND useTSM.\n");
 
@@ -934,8 +485,9 @@ void writeLoops_ASCII(Float *writeBuf, const char *Pref, qudaQKXTM_loopInfo loop
   }//-if GK_timeRank
 
 }
+*/
 
-
+/* Moved to qudaQKXTM_Loops_Kepler.cpp
 //-C.K: Copy the HDF5 dataset chunk into writeBuf
 template<typename Float>
 void getLoopWriteBuf(Float *writeBuf, Float *loopBuf, int iPrint, int Nmoms, int imom, bool oneD){
@@ -960,8 +512,9 @@ void getLoopWriteBuf(Float *writeBuf, Float *loopBuf, int iPrint, int Nmoms, int
   }//-if GK_timeRank
 
 }
+*/
 
-
+/* Moved to qudaQKXTM_Loops_Kepler.cpp
 //-C.K: Funtion to write the loops in HDF5 format
 template<typename Float>
 void writeLoops_HDF5(Float *buf_std_uloc, Float *buf_gen_uloc, 
@@ -1115,299 +668,41 @@ void writeLoops_HDF5(Float *buf_std_uloc, Float *buf_gen_uloc,
     free(writeBuf);
   }
 }
+*/
 
-/* Quarantined code
-template<typename Float>
-void dumpLoop(void *cnRes_gv, void *cnRes_vv, const char *Pref,int accumLevel, int Q_sq){
-  int **mom = allocateMomMatrix(Q_sq);
-  FILE *ptr_gv;
-  FILE *ptr_vv;
-  char file_gv[257];
-  char file_vv[257];
-  sprintf(file_gv, "%s_dOp.loop.%04d.%d_%d",Pref,accumLevel,comm_size(), comm_rank());
-  sprintf(file_vv, "%s_Scalar.loop.%04d.%d_%d",Pref,accumLevel,comm_size(), comm_rank());
-  ptr_gv = fopen(file_gv,"w");
-  ptr_vv = fopen(file_vv,"w");
-  if(ptr_gv == NULL || ptr_vv == NULL) errorQuda("Error open files to write loops\n");
-  long int Vol = GK_localL[0]*GK_localL[1]*GK_localL[2];
-  for(int ip=0; ip < Vol; ip++)
-    for(int lt=0; lt < GK_localL[3]; lt++){
-      if ((mom[ip][0]*mom[ip][0] + mom[ip][1]*mom[ip][1] + mom[ip][2]*mom[ip][2]) <= Q_sq){
-	int t  = lt+comm_coords(default_topo)[3]*GK_localL[3];
-	for(int gm=0; gm<16; gm++){                                                             
-	  fprintf (ptr_gv, "%02d %02d %+d %+d %+d %+16.15e %+16.15e\n",t, gm, mom[ip][0], mom[ip][1], mom[ip][2],
-		   ((Float*)cnRes_gv)[0+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm], ((Float*)cnRes_gv)[1+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]);
-	  fprintf (ptr_vv, "%02d %02d %+d %+d %+d %+16.15le %+16.15e\n",t, gm, mom[ip][0], mom[ip][1], mom[ip][2],
-		   ((Float*)cnRes_vv)[0+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm], ((Float*)cnRes_vv)[1+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]);
-	}
-      }
-    }
-  printfQuda("data dumped for accumLevel %d\n",accumLevel);
-  fclose(ptr_gv);
-  fclose(ptr_vv);
-  for(int ip=0; ip<Vol; ip++)
-    free(mom[ip]);
-  free(mom);
-}
-*/ 
 
-/* Quarantined code
-template<typename Float>
-void dumpLoop_ultraLocal(void *cn, const char *Pref,int accumLevel, int Q_sq, int flag){
-  int **mom = allocateMomMatrix(Q_sq);
-  FILE *ptr;
-  char file_name[257];
+/* Quarantined Code
+template <typename Float>
+void doCudaFFT(void *cnRes_gv, void *cnRes_vv, void *cnResTmp_gv,void *cnResTmp_vv){
+  static cufftHandle      fftPlan;
+  static int              init = 0;
+  int                     nRank[3]         = {GK_localL[0], GK_localL[1], GK_localL[2]};
+  const int               Vol              = GK_localL[0]*GK_localL[1]*GK_localL[2];
+  static cudaStream_t     streamCuFFT;
+  cudaStreamCreate(&streamCuFFT);
 
-  switch(flag){
-  case 0:
-    sprintf(file_name, "%s_Scalar.loop.%04d.%d_%d",Pref,accumLevel,comm_size(), comm_rank());
-    break;
-  case 1:
-    sprintf(file_name, "%s_dOp.loop.%04d.%d_%d",Pref,accumLevel,comm_size(), comm_rank());
-    break;
-  }
-  ptr = fopen(file_name,"w");
+  if(cufftPlanMany(&fftPlan, 3, nRank, nRank, 1, Vol, nRank, 1, Vol, CUFFT_Z2Z, 16*GK_localL[3]) != CUFFT_SUCCESS) errorQuda("Error in the FFT!!!\n");
+  cufftSetCompatibilityMode       (fftPlan, CUFFT_COMPATIBILITY_FFTW_PADDING);
+  cufftSetStream                  (fftPlan, streamCuFFT);
+  checkCudaError();
+  void* ctrnS;
+  if((cudaMalloc(&ctrnS, sizeof(Float)*32*Vol*GK_localL[3])) == cudaErrorMemoryAllocation) errorQuda("Error with memory allocation\n");
 
-  if(ptr == NULL) errorQuda("Error open files to write loops\n");
-  long int Vol = GK_localL[0]*GK_localL[1]*GK_localL[2];
-  for(int ip=0; ip < Vol; ip++)
-    for(int lt=0; lt < GK_localL[3]; lt++){
-      if ((mom[ip][0]*mom[ip][0] + mom[ip][1]*mom[ip][1] + mom[ip][2]*mom[ip][2]) <= Q_sq){
-	int t  = lt+comm_coords(default_topo)[3]*GK_localL[3];
-	for(int gm=0; gm<16; gm++){                                                             
-	  fprintf(ptr, "%02d %02d %+d %+d %+d %+16.15e %+16.15e\n",t, gm, mom[ip][0], mom[ip][1], mom[ip][2],
-		  ((Float*)cn)[0+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm], ((Float*)cn)[1+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]);
-	}
-      }
-    }
-  printfQuda("data dumped for accumLevel %d\n",accumLevel);
-  fclose(ptr);
-  for(int ip=0; ip<Vol; ip++)
-    free(mom[ip]);
-  free(mom);
+  cudaMemcpy(ctrnS, cnRes_vv, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyHostToDevice);
+  if(typeid(Float) == typeid(double))if(cufftExecZ2Z(fftPlan, (double2 *) ctrnS, (double2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
+  if(typeid(Float) == typeid(float))if(cufftExecC2C(fftPlan, (float2 *) ctrnS, (float2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
+  cudaMemcpy(cnResTmp_vv, ctrnS, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyDeviceToHost);
+
+  cudaMemcpy(ctrnS, cnRes_gv, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyHostToDevice);
+  if(typeid(Float) == typeid(double))if(cufftExecZ2Z(fftPlan, (double2 *) ctrnS, (double2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
+  if(typeid(Float) == typeid(float))if(cufftExecC2C(fftPlan, (float2 *) ctrnS, (float2 *) ctrnS, CUFFT_FORWARD) != CUFFT_SUCCESS) errorQuda("Error run cudafft\n");
+  cudaMemcpy(cnResTmp_gv, ctrnS, sizeof(Float)*32*Vol*GK_localL[3], cudaMemcpyDeviceToHost);
+
+
+  cudaFree(ctrnS);
+  cufftDestroy            (fftPlan);
+  cudaStreamDestroy       (streamCuFFT);
+  checkCudaError();
 }
 */
 
-/* Quarantined code
-template<typename Float>
-void dumpLoop_oneD(void *cn, const char *Pref,int accumLevel, int Q_sq, int muDir, int flag){
-  int **mom = allocateMomMatrix(Q_sq);
-  FILE *ptr;
-  char file_name[257];
-
-  switch(flag){
-  case 0:
-    sprintf(file_name, "%s_Loops.loop.%04d.%d_%d",Pref,accumLevel,comm_size(), comm_rank());
-    break;
-  case 1:
-    sprintf(file_name, "%s_LpsDw.loop.%04d.%d_%d",Pref,accumLevel,comm_size(), comm_rank());
-    break;
-  case 2:
-    sprintf(file_name, "%s_LoopsCv.loop.%04d.%d_%d",Pref,accumLevel,comm_size(), comm_rank());
-    break;
-  case 3:
-    sprintf(file_name, "%s_LpsDwCv.loop.%04d.%d_%d",Pref,accumLevel,comm_size(), comm_rank());
-    break;
-  }
-  if(muDir == 0)
-    ptr = fopen(file_name,"w");
-  else
-    ptr = fopen(file_name,"a");
-
-  if(ptr == NULL) errorQuda("Error open files to write loops\n");
-  long int Vol = GK_localL[0]*GK_localL[1]*GK_localL[2];
-  for(int ip=0; ip < Vol; ip++)
-    for(int lt=0; lt < GK_localL[3]; lt++){
-      if ((mom[ip][0]*mom[ip][0] + mom[ip][1]*mom[ip][1] + mom[ip][2]*mom[ip][2]) <= Q_sq){
-	int t  = lt+comm_coords(default_topo)[3]*GK_localL[3];
-	for(int gm=0; gm<16; gm++){                                                             
-	  fprintf(ptr, "%02d %02d %02d %+d %+d %+d %+16.15e %+16.15e\n",t, gm, muDir ,mom[ip][0], mom[ip][1], mom[ip][2],
-		  0.25*(((Float*)cn)[0+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]), 0.25*(((Float*)cn)[1+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]));
-	}
-      }
-    }
-
-  printfQuda("data dumped for accumLevel %d\n",accumLevel);
-  fclose(ptr);
-  for(int ip=0; ip<Vol; ip++)
-    free(mom[ip]);
-  free(mom);
-}
-*/
-
-/* Quarantined code
-template<typename Float>
-void dumpLoop_ultraLocal_v2(void *cn, const char *Pref,int accumLevel, int Q_sq, char *string){
-  int **mom = allocateMomMatrix(Q_sq);
-  FILE *ptr;
-  char file_name[257];
-
-  sprintf(file_name, "%s_%s.loop.%04d.%d_%d",Pref,string,accumLevel,comm_size(), comm_rank());
-  ptr = fopen(file_name,"w");
-
-  if(ptr == NULL) errorQuda("Error open files to write loops\n");
-  long int Vol = GK_localL[0]*GK_localL[1]*GK_localL[2];
-  for(int ip=0; ip < Vol; ip++)
-    for(int lt=0; lt < GK_localL[3]; lt++){
-      if ((mom[ip][0]*mom[ip][0] + mom[ip][1]*mom[ip][1] + mom[ip][2]*mom[ip][2]) <= Q_sq){
-	int t  = lt+comm_coords(default_topo)[3]*GK_localL[3];
-	for(int gm=0; gm<16; gm++){                                                             
-	  fprintf(ptr, "%02d %02d %+d %+d %+d %+16.15e %+16.15e\n",t, gm, mom[ip][0], mom[ip][1], mom[ip][2],
-		  ((Float*)cn)[0+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm], ((Float*)cn)[1+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]);
-	}
-      }
-    }
-  printfQuda("data dumped for accumLevel %d\n",accumLevel);
-  fclose(ptr);
-  for(int ip=0; ip<Vol; ip++)
-    free(mom[ip]);
-  free(mom);
-}
-*/
-
-/* Quarantined code 
-template<typename Float>
-void dumpLoop_oneD_v2(void *cn, const char *Pref,int accumLevel, int Q_sq, int muDir, char *string){
-  int **mom = allocateMomMatrix(Q_sq);
-  FILE *ptr;
-  char file_name[257];
-
-  sprintf(file_name, "%s_%s.loop.%04d.%d_%d",Pref,string,accumLevel,comm_size(), comm_rank());
-
-  if(muDir == 0)
-    ptr = fopen(file_name,"w");
-  else
-    ptr = fopen(file_name,"a");
-
-  if(ptr == NULL) errorQuda("Error open files to write loops\n");
-  long int Vol = GK_localL[0]*GK_localL[1]*GK_localL[2];
-  for(int ip=0; ip < Vol; ip++)
-    for(int lt=0; lt < GK_localL[3]; lt++){
-      if ((mom[ip][0]*mom[ip][0] + mom[ip][1]*mom[ip][1] + mom[ip][2]*mom[ip][2]) <= Q_sq){
-	int t  = lt+comm_coords(default_topo)[3]*GK_localL[3];
-	for(int gm=0; gm<16; gm++){                                                             
-	  fprintf(ptr, "%02d %02d %02d %+d %+d %+d %+16.15e %+16.15e\n",t, gm, muDir ,mom[ip][0], mom[ip][1], mom[ip][2],
-		  0.25*(((Float*)cn)[0+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]), 0.25*(((Float*)cn)[1+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]));
-	}
-      }
-    }
-
-  printfQuda("data dumped for accumLevel %d\n",accumLevel);
-  fclose(ptr);
-  for(int ip=0; ip<Vol; ip++)
-    free(mom[ip]);
-  free(mom);
-}
-*/
-
-/* Quarantined code
-template<typename Float>
-void dumpVector(Float *vec, int is, char file_base[]){
-  FILE *ptr;
-  char file_name[257];
-
-  sprintf(file_name,"%s.%04d.%d_%d",file_base,is+1,comm_size(), comm_rank());
-  ptr = fopen(file_name,"w");
-  if(ptr == NULL) errorQuda("Cannot open file %s for deflated source\n",file_name);
-
-
-  for(int t=0;  t<GK_localL[3]; t++){
-    int gt  = t+comm_coords(default_topo)[3]*GK_localL[3];
-    for(int z=0;  z<GK_localL[2]; z++){
-      for(int y=0;  y<GK_localL[1]; y++){
-	for(int x=0;  x<GK_localL[0]; x++){
-	  for(int mu=0; mu<4; mu++){
-	    for(int c1=0; c1<3; c1++){
-	      int pos = t*GK_localL[2]*GK_localL[1]*GK_localL[0]*4*3*2 + z*GK_localL[1]*GK_localL[0]*4*3*2 + y*GK_localL[0]*4*3*2 + x*4*3*2 + mu*3*2 + c1*2;
-	      fprintf(ptr,"%02d %02d %02d %02d %02d %02d %+16.15e %+16.15e\n",gt,z,y,x,mu,c1,vec[pos+0],vec[pos+1]);
-	    }}}}}
-  }
-  
-  printf("Rank %d: Vector %s dumped\n",comm_rank(),file_name);
-  fclose(ptr);
-}
-*/
-
-/* Quarantined Code 
-template<typename Float>
-void dumpLoop_ultraLocal_Exact(void *cn, const char *Pref, int Q_sq, int flag){
-  int **mom = allocateMomMatrix(Q_sq);
-  FILE *ptr;
-  char file_name[257];
-  
-  switch(flag){
-  case 0:
-    sprintf(file_name, "%s_Scalar.loop.%d_%d",Pref,comm_size(), comm_rank());
-    break;
-  case 1:
-    sprintf(file_name, "%s_dOp.loop.%d_%d",Pref,comm_size(), comm_rank());
-    break;
-  }
-  ptr = fopen(file_name,"w");
-  
-  if(ptr == NULL) errorQuda("Error open files to write loops\n");
-  long int Vol = GK_localL[0]*GK_localL[1]*GK_localL[2];
-  for(int ip=0; ip < Vol; ip++)
-    for(int lt=0; lt < GK_localL[3]; lt++){
-      if ((mom[ip][0]*mom[ip][0] + mom[ip][1]*mom[ip][1] + mom[ip][2]*mom[ip][2]) <= Q_sq){
-	int t = lt+comm_coords(default_topo)[3]*GK_localL[3];
-	for(int gm=0; gm<16; gm++){                                                             
-	  fprintf(ptr, "%02d %02d %+d %+d %+d %+16.15e %+16.15e\n",t, gm, mom[ip][0], mom[ip][1], mom[ip][2],
-		  ((Float*)cn)[0+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm], ((Float*)cn)[1+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]);
-	}
-      }
-    }
-
-  fclose(ptr);
-  for(int ip=0; ip<Vol; ip++)
-    free(mom[ip]);
-  free(mom);
-}
-*/
-
-/* Quarantined Code 
-template<typename Float>
-void dumpLoop_oneD_Exact(void *cn, const char *Pref, int Q_sq, int muDir, int flag){
-  int **mom = allocateMomMatrix(Q_sq);
-  FILE *ptr;
-  char file_name[257];
-  
-  switch(flag){
-  case 0:
-    sprintf(file_name, "%s_Loops.loop.%d_%d",Pref,comm_size(), comm_rank());
-    break;
-  case 1:
-    sprintf(file_name, "%s_LpsDw.loop.%d_%d",Pref,comm_size(), comm_rank());
-    break;
-  case 2:
-    sprintf(file_name, "%s_LoopsCv.loop.%d_%d",Pref,comm_size(), comm_rank());
-    break;
-  case 3:
-    sprintf(file_name, "%s_LpsDwCv.loop.%d_%d",Pref,comm_size(), comm_rank());
-    break;
-  }
-  if(muDir == 0)
-    ptr = fopen(file_name,"w");
-  else
-    ptr = fopen(file_name,"a");
-  
-  if(ptr == NULL) errorQuda("Error open files to write loops\n");
-  long int Vol = GK_localL[0]*GK_localL[1]*GK_localL[2];
-  for(int ip=0; ip < Vol; ip++)
-    for(int lt=0; lt < GK_localL[3]; lt++){
-      if ((mom[ip][0]*mom[ip][0] + mom[ip][1]*mom[ip][1] + mom[ip][2]*mom[ip][2]) <= Q_sq){
-	int t  = lt+comm_coords(default_topo)[3]*GK_localL[3];
-	for(int gm=0; gm<16; gm++){                                                             
-	  fprintf(ptr, "%02d %02d %02d %+d %+d %+d %+16.15e %+16.15e\n",t, gm, muDir ,mom[ip][0], mom[ip][1], mom[ip][2],
-		  0.25*(((Float*)cn)[0+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]), 0.25*(((Float*)cn)[1+2*ip+2*Vol*lt+2*Vol*GK_localL[3]*gm]));
-	}
-      }
-    }
-
-  fclose(ptr);
-  for(int ip=0; ip<Vol; ip++)
-    free(mom[ip]);
-  free(mom);
-
-}
-*/
