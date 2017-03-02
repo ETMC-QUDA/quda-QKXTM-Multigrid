@@ -17,6 +17,7 @@ Dependencies:
 In order to compile this code, one must also have  the following installed:
 
    QUDA specific
+   REQUIRED:
    magma 1.7.0
    
    ETMC-QUDA specific
@@ -47,7 +48,7 @@ to the interface_quda.cpp file of mainline QUDA. This is so we can use the
 internal gauge field structures directly. The class definitions and header
 files of auxiliary functions are contained in files prepended like so,
 
-   QKXTM_<some file>.suffix
+   qudaQKXTM_<some file>.suffix
 
 There is a single .cu file for kernels, a 'code_pieces' directory in lib/,
 a single qudaQKXTM_Kepler_utils.cpp and .h file for containers and general 
@@ -75,7 +76,7 @@ of QUDA.
 
 Authors:
 
-The majority of this code base was authored by,
+The majority of the QKXTM code base was authored by,
 
 Kyriakos Hadjiyiannakou
 Christos Kallidonis
