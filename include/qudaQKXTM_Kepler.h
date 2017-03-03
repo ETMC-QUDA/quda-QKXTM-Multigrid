@@ -437,6 +437,8 @@ namespace quda {
     void readEigenValues(char *filename);
     void deflateVector(QKXTM_Vector_Kepler<Float> &vec_defl, 
 		       QKXTM_Vector_Kepler<Float> &vec_in);
+    void deflateVectorSVD(QKXTM_Vector_Kepler<Float> &vec_defl, 
+			  QKXTM_Vector_Kepler<Float> &vec_in);
     void ApplyMdagM(Float *vec_out, Float *vec_in, QudaInvertParam *param);
     void MapEvenOddToFull();
     void MapEvenOddToFull(int i);
