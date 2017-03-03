@@ -8945,7 +8945,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
       else {
 	//Calculation should default to this.
 	//Project out the exact part only.
-	deflation->deflateVector(*K_vecdef,*K_vector);
+	deflation->deflateVectorSVD(*K_vecdef,*K_vector);
       }
       t2 = MPI_Wtime();
       printfQuda("TIME_REPORT %s %04d - Init.guess deflation: %f sec\n",
@@ -9233,7 +9233,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 	else {
 	  //Calculation should default to this.
 	  //Project out the exact part only.
-	  deflation->deflateVector(*K_vecdef,*K_vector);
+	  deflation->deflateVectorSVD(*K_vecdef,*K_vector);
 	}
 	t2 = MPI_Wtime();
 	printfQuda("TIME_REPORT: NHP %04d - Init.guess deflation: %f sec\n",

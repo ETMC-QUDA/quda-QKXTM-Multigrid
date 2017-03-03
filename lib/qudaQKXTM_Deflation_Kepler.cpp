@@ -712,6 +712,179 @@ deflateVector(QKXTM_Vector_Kepler<Float> &vec_defl,
   //  printfQuda("deflateVector: Deflation of the initial guess completed succesfully\n");
 }
 
+//DMH: This member function performs the operation 
+//     vec_defl = U (\Sigma)^(-1) U^dag vec_in
+//     where Sigma = sqrt(abs(Lambda))
+template <typename Float>
+void QKXTM_Deflation_Kepler<Float>::
+deflateVectorSVD(QKXTM_Vector_Kepler<Float> &vec_defl, 
+		 QKXTM_Vector_Kepler<Float> &vec_in){
+  if(NeV == 0){
+    vec_defl.zero_device();
+    return;
+  }
+  
+  Float *tmp_vec = (Float*) calloc((GK_localVolume)*4*3*2,sizeof(Float)) ;
+  Float *tmp_vec_lex = (Float*) calloc((GK_localVolume)*4*3*2,sizeof(Float));
+  Float *out_vec = (Float*) calloc(NeV*2,sizeof(Float)) ;
+  Float *out_vec_reduce = (Float*) calloc(NeV*2,sizeof(Float)) ;
+  
+  if(tmp_vec        == NULL || 
+     tmp_vec_lex    == NULL || 
+     out_vec        == NULL || 
+     out_vec_reduce == NULL)
+    errorQuda("Error with memory allocation in deflation method\n");
+  
+  Float *tmp_vec_even = tmp_vec;
+  Float *tmp_vec_odd = tmp_vec + (GK_localVolume/2)*4*3*2;
+  
+  if(!isFullOp){
+    for(int t=0; t<GK_localL[3];t++)
+    for(int z=0; z<GK_localL[2];z++)
+    for(int y=0; y<GK_localL[1];y++)
+    for(int x=0; x<GK_localL[0];x++)
+    for(int mu=0; mu<4; mu++)
+    for(int c1=0; c1<3; c1++)
+      {
+	int oddBit = (x+y+z+t) & 1;
+	if(oddBit){
+	  for(int ipart = 0 ; ipart < 2 ; ipart++)
+	    tmp_vec_odd[((t*GK_localL[2]*GK_localL[1]*GK_localL[0] + 
+			  z*GK_localL[1]*GK_localL[0] + 
+			  y*GK_localL[0] + 
+			  x)/2)*4*3*2 + mu*3*2 + c1*2 + ipart] = 
+	  (Float) vec_in.H_elem()[(t*GK_localL[2]*GK_localL[1]*GK_localL[0] +
+				   z*GK_localL[1]*GK_localL[0] + 
+				   y*GK_localL[0] + 
+				   x)*4*3*2 + mu*3*2 + c1*2 + ipart];
+	}
+	else{
+	  for(int ipart = 0 ; ipart < 2 ; ipart++)
+	    tmp_vec_even[((t*GK_localL[2]*GK_localL[1]*GK_localL[0] + 
+			   z*GK_localL[1]*GK_localL[0] + 
+			   y*GK_localL[0] + 
+			   x)/2)*4*3*2 + mu*3*2 + c1*2 + ipart] = 
+	  (Float) vec_in.H_elem()[(t*GK_localL[2]*GK_localL[1]*GK_localL[0]+ 
+				   z*GK_localL[1]*GK_localL[0] + 
+				   y*GK_localL[0] + 
+				   x)*4*3*2 + mu*3*2 + c1*2 + ipart];
+	}
+      }  
+  }  
+  else if(isFullOp){
+    memcpy(tmp_vec,vec_in.H_elem(),bytes_total_length_per_NeV);
+  }
+
+  Float alpha[2] = {1.,0.};
+  Float beta[2] = {0.,0.};
+  int incx = 1;
+  int incy = 1;
+  long int NN = (GK_localVolume/fullorHalf)*4*3;
+
+  Float *ptr_elem = NULL;
+
+  if(!isFullOp){
+    if(isEv == true){
+      ptr_elem = tmp_vec_even;
+    }
+    else{
+      ptr_elem = tmp_vec_odd;
+    }
+  }
+  else{
+    ptr_elem = tmp_vec;
+  }
+
+
+  if( typeid(Float) == typeid(float) ){
+    //-C.K: out_vec = H_elem^dag * ptr_elem -> U^dag * vec_in
+    cblas_cgemv(CblasColMajor, CblasConjTrans, NN, NeV, 
+		(void*) alpha, (void*) h_elem, NN, ptr_elem, incx, 
+		(void*) beta, out_vec, incy ); 
+    //-C.K_CHECK: This might not be needed
+    memset(ptr_elem,0,NN*2*sizeof(Float));
+    MPI_Allreduce(out_vec,out_vec_reduce,NeV*2,MPI_FLOAT,
+		  MPI_SUM,MPI_COMM_WORLD);
+    for(int i = 0 ; i < NeV ; i++){
+      //-Eigenvalues are real!
+      out_vec_reduce[i*2+0] /= sqrt(abs(eigenValues[i*2+0])); 
+      //DMH out_vec_reduce -> \Sigma^(-1) * U^dag * vec_in
+      out_vec_reduce[i*2+1] /= sqrt(abs(eigenValues[i*2+0])); 
+    }
+    //-C.K: ptr_elem = H_elem * out_vec_reduce -> ptr_elem = U * \Sigma^(-1) * U^dag * vec_in
+    cblas_cgemv(CblasColMajor, CblasNoTrans, NN, NeV, 
+		(void*) alpha, (void*) h_elem, NN, out_vec_reduce, incx, 
+		(void*) beta, ptr_elem, incy );
+  }
+  else if ( typeid(Float) == typeid(double) ){
+    cblas_zgemv(CblasColMajor, CblasConjTrans, NN, NeV, 
+		(void*) alpha, (void*) h_elem, NN, ptr_elem, incx, 
+		(void*) beta, out_vec, incy );
+    //-C.K_CHECK: This might not be needed
+    memset(ptr_elem,0,NN*2*sizeof(Float)); 
+    MPI_Allreduce(out_vec,out_vec_reduce,NeV*2,MPI_DOUBLE,
+		  MPI_SUM,MPI_COMM_WORLD);
+    for(int i = 0 ; i < NeV ; i++){
+      out_vec_reduce[i*2+0] /= eigenValues[2*i+0];
+      out_vec_reduce[i*2+1] /= eigenValues[2*i+0];
+    }
+    cblas_zgemv(CblasColMajor, CblasNoTrans, NN, NeV, 
+		(void*) alpha, (void*) h_elem, NN, out_vec_reduce, incx, 
+		(void*) beta, ptr_elem, incy );    
+  }
+  
+  
+
+  if(!isFullOp){
+    for(int t=0; t<GK_localL[3];t++)
+    for(int z=0; z<GK_localL[2];z++)
+    for(int y=0; y<GK_localL[1];y++)
+    for(int x=0; x<GK_localL[0];x++)
+    for(int mu=0; mu<4; mu++)
+    for(int c1=0; c1<3; c1++)
+      {
+	int oddBit     = (x+y+z+t) & 1;
+	if(oddBit){
+	  for(int ipart = 0 ; ipart < 2 ; ipart++)
+	    tmp_vec_lex[(t*GK_localL[2]*GK_localL[1]*GK_localL[0] + 
+			 z*GK_localL[1]*GK_localL[0] + 
+			 y*GK_localL[0] + 
+			 x)*4*3*2 + mu*3*2 + c1*2 + ipart] = 
+	      tmp_vec_odd[((t*GK_localL[2]*GK_localL[1]*GK_localL[0] + 
+			    z*GK_localL[1]*GK_localL[0] + 
+			    y*GK_localL[0] + 
+			    x)/2)*4*3*2 + mu*3*2 + c1*2 + ipart];
+	}
+	else{
+	  for(int ipart = 0 ; ipart < 2 ; ipart++)
+	    tmp_vec_lex[(t*GK_localL[2]*GK_localL[1]*GK_localL[0] + 
+			 z*GK_localL[1]*GK_localL[0] + 
+			 y*GK_localL[0] + 
+			 x)*4*3*2 + mu*3*2 + c1*2 + ipart] = 
+	      tmp_vec_even[((t*GK_localL[2]*GK_localL[1]*GK_localL[0] + 
+			     z*GK_localL[1]*GK_localL[0] + 
+			     y*GK_localL[0] + 
+			     x)/2)*4*3*2 + mu*3*2 + c1*2 + ipart];
+	}
+      }  
+  }
+  else{
+    //    memcpy(tmp_vec_lex,tmp_vec,bytes_total_length_per_NeV);
+    memcpy(tmp_vec_lex,ptr_elem,bytes_total_length_per_NeV);
+  }
+
+  vec_defl.packVector((Float*) tmp_vec_lex);
+  vec_defl.loadVector();
+
+
+  free(out_vec);
+  free(out_vec_reduce);
+  free(tmp_vec);
+  free(tmp_vec_lex);
+
+  //  printfQuda("deflateVector: Deflation of the initial guess completed succesfully\n");
+}
+
 
 template<typename Float>
 void QKXTM_Deflation_Kepler<Float>::
