@@ -6003,6 +6003,7 @@ void invertMultiShiftQuda(void **_hp_x, void *_hp_b, QudaInvertParam *param)
 #include <qudaQKXTM_Contraction_Kepler.cpp>
 #ifdef HAVE_ARPACK
 #include <qudaQKXTM_Deflation_Kepler.cpp>
+#include <qudaQKXTM_Loops_Kepler.cpp>
 #endif
 
 #include <qudaQKXTM_Kepler_utils.cpp>
@@ -8054,10 +8055,9 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 				  QudaInvertParam *param, 
 				  QudaGaugeParam *gauge_param,
 				  qudaQKXTM_arpackInfo arpackInfo, 
-				  qudaQKXTM_arpackInfo arpackInfoEO, 
 				  qudaQKXTM_loopInfo loopInfo, 
 				  qudaQKXTMinfo_Kepler info){
-  
+
   double t1,t2,t3,t4;
   char fname[256];
   sprintf(fname, "calcMG_loop_wOneD_TSM_wExact");
@@ -8093,37 +8093,6 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   if(param->dirac_order != QUDA_DIRAC_ORDER) 
     errorQuda("%s: This function works only with color-inside-spin\n",fname);
   
-  //Should always be false, use MG rather than
-  //delflating the stochastic remainder.
-  bool stochEO = loopInfo.fullOp_stochEO;  
-  if(stochEO) 
-    errorQuda("%s: Stochastc deflation not supported\n",fname);
-
-  //if false, we will construct the full solution spinor 
-  bool pc_solution = false;
-
-  bool pc_solve;
-  bool flag_eo;
-  if(stochEO){
-    //Should always be false, use MG rather than
-    //delflating the stochastic remainder.
-    pc_solve = true;
-    if(arpackInfo.isEven){
-      flag_eo = true;
-      printfQuda("%s: Will solve the stochastic part using the Even-Odd, Even-Even Asymmetric operator\n");
-    }
-    else{
-      flag_eo = false;
-      printfQuda("%s: Will solve the stochastic part using the Even-Odd, Odd-Odd Asymmetric operator\n");
-    }
-  }
-  else{
-    //Calculation should default to this.
-    flag_eo = false;
-    pc_solve = false;
-    printfQuda("%s: Will solve the stochastic part using the Full operator\n");
-  }
-
   //Stochastic, momentum, and data dump information.
   int Nstoch = loopInfo.Nstoch;
   unsigned long int seed = loopInfo.seed;
@@ -8132,7 +8101,15 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   loopInfo.Nmoms = GK_Nmoms;
   int Nmoms = GK_Nmoms;
   char filename_out[512];
+  // Stochastic method should be fixed to 0
   int smethod = loopInfo.smethod;
+  if(smethod != 0) {
+    printfQuda("\nYour stochastic method is deprecated for MG\n");
+    printfQuda("enabled stochastic solutions. Switching to\n");
+    printfQuda("stochastic method 0.\n");
+    smethod = 0;
+  }
+
 
   FILE_WRITE_FORMAT LoopFileFormat = loopInfo.FileFormat;
 
@@ -8594,6 +8571,11 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   //========== E X A C T   P R O B L E M   C O N S T R U C T =============// 
   //======================================================================//
 
+  // QKXTM: DMH Here the low modes of the normal M^{\dagger}M 
+  //        operator are constructed. The correlation function
+  //        values are calculated at every Nth deflation step:
+  //        Nth = loopInfo.deflStep[s]
+  
   printfQuda("\n ### Exact part calculation ###\n");
 
   int NeV_Full = arpackInfo.nEv;  
@@ -8720,22 +8702,22 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   //======  S T O C H A S T I C   P R O B L E M   C O N S T R U C T =====//
   //=====================================================================//
 
+  //QKXTM: DMH Here we calculate the contribution to the All-to-All
+  //       propagator from stochastic sources. In previous versions
+  //       of this code, deflation was used to accelerate the inversions
+  //       using either a deflation operator from the exact part with a 
+  //       normal (M^+M \phi = M^+ \eta) solve type, or exact deflation 
+  //       and an extra Even/Odd preconditioned deflation step on the 
+  //       remainder.
+  //       Due to the direct solve limitation of MG, we can longer use
+  //       the exact part to accelerate the problem execution. We
+  //       therefore simply solve for the stochastic source using MG,
+  //       then project out the exact contribution from the solution.
+  //       This way, we can make estimates about the bias from the 
+  //       Truncated Solver Method using the exact contribution and the
+  //       inexact contribution separately.
+
   printfQuda("\n ### Stochastic part calculation ###\n\n");
-
-  QKXTM_Deflation_Kepler<double> *deflationEO;
-  if(stochEO){
-    //Should always be false, use MG rather than
-    //delflating the stochastic remainder.
-    deflationEO = new QKXTM_Deflation_Kepler<double>(param, arpackInfoEO);
-    deflationEO->printInfo();
-
-    //- Calculate the eigenVectors of the Even-Odd operator
-    t1 = MPI_Wtime(); 
-    deflationEO->eigenSolver();
-    t2 = MPI_Wtime();
-    printfQuda("%s TIME REPORT: EO Operator EV Calculation: %f sec\n",
-    	       fname,t2-t1);
-  }
 
   cudaGaugeField *cudaGauge = checkGauge(param);
   checkInvertParam(param);
@@ -8746,11 +8728,25 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   K_gauge->loadGauge();
   K_gauge->calculatePlaq();
 
-  //???
-  //bool pc_solve = true;
+  // QKXTM: DMH Calculation should default to these settings.
+  printfQuda("%s: Will solve the stochastic part using Multigrid.\n");
+
+  // QKXTM: DMH This is a fairly arbitrary setting in terms of
+  //        solver performance. 
+  bool flag_eo = false;
+
+  // QKXTM: DMH EO preconditioned solves offer x2
+  //        speed up, we should always use it.
+  bool pc_solve = true;
+
+  // QKXTM: DMH we MUST construct the full solution spinor
+  //        in order to properly project out the exact part.
+  bool pc_solution = false;
+
   bool mat_solution = 
     (param->solution_type == QUDA_MAT_SOLUTION) || 
     (param->solution_type == QUDA_MATPC_SOLUTION);
+  // QKXTM: DMH MG can only use DIRECT solves.
   bool direct_solve = true;
 
   param->spinorGiB = cudaGauge->VolumeCB() * spinorSiteSize;
@@ -8876,119 +8872,46 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
     // in -> b, out -> x, for parity singlets
     dirac.prepare(in,out,*x,*b,param->solution_type); 
 
-    K_vector->downloadFromCuda(in,flag_eo);
-    K_vector->download();
+    //QKXTM: DMH No source preparation is required
       
     t1 = MPI_Wtime();
-    //Smethod 1
-    if(smethod==1){ 
-      // Deflate the source vector
-      if(loopInfo.nSteps_defl>1) 
-    	warningQuda("Stepped-deflation not supported with smethod==1. Will perform loops only with NeV= %d\n", arpackInfo.nEv); 
-      nDeflSteps = 1;
-      loopInfo.deflStep[0] = arpackInfo.nEv;
+    nDeflSteps = loopInfo.nSteps_defl;
       
-      if(stochEO) {
-	//Should always be false, use MG rather than
-	//delflating the stochastic remainder.
-    	errorQuda("Stochastic part with Even-Odd operator not applicable with smethod = 1.\n");
-      }
-      //Use Christos's (1-P) projection technique. 
-      deflation->projectVector(*K_vecdef,*K_vector,is+1,arpackInfo.nEv);  
-      t2 = MPI_Wtime();
-      printfQuda("TIME_REPORT: %s %04d - Source projection: %f sec\n",
-    		 msg_str,is+1,t2-t1);
+    //If we are using the TSM, we need the LP
+    //solve for bias estimation. 
+    if(useTSM) {
+      //LP solve
+      double orig_tol = param->tol;
+      long int orig_maxiter = param->maxiter;
+      // Set the low-precision criterion
+      if(TSM_maxiter==0) param->tol = TSM_tol;
+      else if(TSM_tol==0) param->maxiter = TSM_maxiter;  
       
-      // Source Vector is projected, in <- (1-UU^dag) b
-      K_vecdef->uploadToCuda(in,flag_eo);   
-
-      if(useTSM) {
-	//LP solve
-	double orig_tol = param->tol;
-	long int orig_maxiter = param->maxiter;
-	// Set the low-precision criterion
-	if(TSM_maxiter==0) param->tol = TSM_tol;
-	else if(TSM_tol==0) param->maxiter = TSM_maxiter;  
-	
-	// Create the low-precision solver
-	SolverParam solverParam_LP(*param);
-	Solver *solve_LP = Solver::create(solverParam_LP, m, mSloppy, 
-					  mPre, profileInvert);
-	//LP solve
-	(*solve_LP)(*out,*in);
-	delete solve_LP;
-	
-	// Revert to the original, high-precision values
-	if(TSM_maxiter==0) param->tol = orig_tol;           
-	else if(TSM_tol==0) param->maxiter = orig_maxiter;
-      }
-      else {
-	//HP solve
-	SolverParam solverParam(*param);
-	Solver *solve = Solver::create(solverParam, m, mSloppy, 
-				       mPre, profileInvert);
-	(*solve)(*out,*in);
-	delete solve;
-      }
-      dirac.reconstruct(*x,*b,param->solution_type);
+      // Create the low-precision solver
+      SolverParam solverParam_LP(*param);
+      Solver *solve_LP = Solver::create(solverParam_LP, m, mSloppy, 
+					mPre, profileInvert);
+      //LP solve
+      (*solve_LP)(*out,*in);
+      delete solve_LP;
+      
+      // Revert to the original, high-precision values
+      if(TSM_maxiter==0) param->tol = orig_tol;           
+      else if(TSM_tol==0) param->maxiter = orig_maxiter;
     }
-    //Smethod 0 and 3
-    else{
-      // Deflate the initial guess and solution
-      nDeflSteps = loopInfo.nSteps_defl;
-      
-      if(stochEO) {
-	//Should always be false, use MG rather than
-	//delflating the stochastic remainder.
-	deflationEO->deflateVector(*K_vecdef,*K_vector);
-      }
-      else {
-	//Calculation should default to this.
-	//Project out the exact part only.
-	deflation->deflateVector(*K_vecdef,*K_vector);
-      }
-      t2 = MPI_Wtime();
-      printfQuda("TIME_REPORT %s %04d - Init.guess deflation: %f sec\n",
-		 msg_str,is+1,t2-t1);
-      // Initial guess is deflated, out = U(\Lambda^-1)U^dag b
-      K_vecdef->uploadToCuda(out,flag_eo);
-
-      //If we are using the TSM, we need the LP
-      //solve for bias estimation. 
-      if(useTSM) {
-	//LP solve
-	double orig_tol = param->tol;
-	long int orig_maxiter = param->maxiter;
-	// Set the low-precision criterion
-	if(TSM_maxiter==0) param->tol = TSM_tol;
-	else if(TSM_tol==0) param->maxiter = TSM_maxiter;  
-	
-	// Create the low-precision solver
-	SolverParam solverParam_LP(*param);
-	Solver *solve_LP = Solver::create(solverParam_LP, m, mSloppy, 
-					  mPre, profileInvert);
-	//LP solve
-	(*solve_LP)(*out,*in);
-	delete solve_LP;
-	
-	// Revert to the original, high-precision values
-	if(TSM_maxiter==0) param->tol = orig_tol;           
-	else if(TSM_tol==0) param->maxiter = orig_maxiter;
-      }
-      //Else, just do the HP solve.
-      else {
-	//HP solve
-	SolverParam solverParam(*param);
-	Solver *solve = Solver::create(solverParam, m, mSloppy, 
-				       mPre, profileInvert);
-	(*solve)(*out,*in);
-	delete solve;
-      }
-      
-      dirac.reconstruct(*x,*b,param->solution_type);
-      
-      sol = new cudaColorSpinorField(*x);
+    //Else, just do the HP solve.
+    else {
+      //HP solve
+      SolverParam solverParam(*param);
+      Solver *solve = Solver::create(solverParam, m, mSloppy, 
+				     mPre, profileInvert);
+      (*solve)(*out,*in);
+      delete solve;
     }
+    
+    dirac.reconstruct(*x,*b,param->solution_type);
+    
+    sol = new cudaColorSpinorField(*x);    
 
     for(int dstep=0;dstep<nDeflSteps;dstep++){
       int NeV_defl = loopInfo.deflStep[dstep];
@@ -8998,8 +8921,10 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 	t1 = MPI_Wtime();	
 	K_vector->downloadFromCuda(sol,flag_eo);
 	K_vector->download();
+
+	// The exact part is projected out of the solution 
+	// and put into x, x <- (1-UU^dag) x
 	deflation->projectVector(*K_vecdef,*K_vector,is+1,NeV_defl);
-	// Solution is projected and put into x, x <- (1-UU^dag) x
 	K_vecdef->uploadToCuda(x,flag_eo);              
 
 	t2 = MPI_Wtime();
@@ -9178,116 +9103,55 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
       dirac.prepare(in,out   ,*x   ,*b,param->solution_type); 
       dirac.prepare(in,out_LP,*x_LP,*b,param->solution_type);
 
-      K_vector->downloadFromCuda(in,flag_eo);
-      K_vector->download();
-      
       t1 = MPI_Wtime();
-      if(smethod==1){  
-	// Deflate the source vector (Christos)
-	deflation->projectVector(*K_vecdef,*K_vector,is+1,arpackInfo.nEv);
-	t2 = MPI_Wtime();
-	printfQuda("TIME_REPORT: NHP %04d - Source projection: %f sec\n",
-		   is+1,t2-t1);
-	// Source Vector is projected to "in", in = (1-UU^dag) M^dag b
-	K_vecdef->uploadToCuda(in,flag_eo);
-
-	//HP solve
-	//-------------------------------------------------
-	SolverParam solverParam(*param);
-	Solver *solve = Solver::create(solverParam, m, mSloppy, mPre, 
-				       profileInvert);
-	(*solve)   (*out,*in);
-	delete solve;
-	dirac.reconstruct(*x,*b,param->solution_type);
-	//-------------------------------------------------
 	
-	
-	//LP solve
-	//-------------------------------------------------
-	double orig_tol = param->tol;
-	long int orig_maxiter = param->maxiter;
-	// Set the low-precision criterion
-	if(TSM_maxiter==0) param->tol = TSM_tol;
-	else if(TSM_tol==0) param->maxiter = TSM_maxiter;  
-	
-	// Create the low-precision solver
-	SolverParam solverParam_LP(*param);
-	Solver *solve_LP = Solver::create(solverParam_LP, m, mSloppy, 
-					  mPre, profileInvert);
-	(*solve_LP)(*out,*in);
-	delete solve_LP;
-	dirac.reconstruct(*x_LP,*b,param->solution_type);
-	
-	// Revert to the original, high-precision values
-	if(TSM_maxiter==0) param->tol = orig_tol;           
-	else if(TSM_tol==0) param->maxiter = orig_maxiter;      
-	//-------------------------------------------------
-
-      }
-      else{
-	if(stochEO) {
-	  //Should always be false, use MG rather than
-	  //delflating the stochastic remainder.
-	  deflationEO->deflateVector(*K_vecdef,*K_vector);
-	}
-	else {
-	  //Calculation should default to this.
-	  //Project out the exact part only.
-	  deflation->deflateVector(*K_vecdef,*K_vector);
-	}
-	t2 = MPI_Wtime();
-	printfQuda("TIME_REPORT: NHP %04d - Init.guess deflation: %f sec\n",
-		   is+1,t2-t1);
-	// Initial guess is deflated to: out = U(\Lambda^-1)U^dag b
-	K_vecdef->uploadToCuda(out   ,flag_eo);
-	K_vecdef->uploadToCuda(out_LP,flag_eo);
-	
-	//HP solve
-	//-------------------------------------------------
-	SolverParam solverParam(*param);
-	Solver *solve = Solver::create(solverParam, m, mSloppy, mPre, 
-				       profileInvert);
-	(*solve)   (*out,*in);
-	delete solve;
-	dirac.reconstruct(*x,*b,param->solution_type);
-	//-------------------------------------------------
-	
-	
-	//LP solve
-	//-------------------------------------------------
-	double orig_tol = param->tol;
-	long int orig_maxiter = param->maxiter;
-	// Set the low-precision criterion
-	if(TSM_maxiter==0) param->tol = TSM_tol;
-	else if(TSM_tol==0) param->maxiter = TSM_maxiter;  
-	
-	// Create the low-precision solver
-	SolverParam solverParam_LP(*param);
-	Solver *solve_LP = Solver::create(solverParam_LP, m, mSloppy, 
-					  mPre, profileInvert);
-	(*solve_LP)(*out,*in);
-	delete solve_LP;
-	dirac.reconstruct(*x_LP,*b,param->solution_type);
-	
-	// Revert to the original, high-precision values
-	if(TSM_maxiter==0) param->tol = orig_tol;           
-	else if(TSM_tol==0) param->maxiter = orig_maxiter;      
-	//-------------------------------------------------
-	
-	sol    = new cudaColorSpinorField(*x);
-	sol_LP = new cudaColorSpinorField(*x_LP);
-      }
-
+      //HP solve
+      //-------------------------------------------------
+      SolverParam solverParam(*param);
+      Solver *solve = Solver::create(solverParam, m, mSloppy, mPre, 
+				     profileInvert);
+      (*solve)   (*out,*in);
+      delete solve;
+      dirac.reconstruct(*x,*b,param->solution_type);
+      //-------------------------------------------------
+      
+      
+      //LP solve
+      //-------------------------------------------------
+      double orig_tol = param->tol;
+      long int orig_maxiter = param->maxiter;
+      // Set the low-precision criterion
+      if(TSM_maxiter==0) param->tol = TSM_tol;
+      else if(TSM_tol==0) param->maxiter = TSM_maxiter;  
+      
+      // Create the low-precision solver
+      SolverParam solverParam_LP(*param);
+      Solver *solve_LP = Solver::create(solverParam_LP, m, mSloppy, 
+					mPre, profileInvert);
+      (*solve_LP)(*out,*in);
+      delete solve_LP;
+      dirac.reconstruct(*x_LP,*b,param->solution_type);
+      
+      // Revert to the original, high-precision values
+      if(TSM_maxiter==0) param->tol = orig_tol;           
+      else if(TSM_tol==0) param->maxiter = orig_maxiter;      
+      //-------------------------------------------------
+      
+      sol    = new cudaColorSpinorField(*x);
+      sol_LP = new cudaColorSpinorField(*x_LP);
+      
       for(int dstep=0;dstep<nDeflSteps;dstep++){
 	int NeV_defl = loopInfo.deflStep[dstep];
 	printfQuda("# Performing TSM contractions for NeV = %d\n",NeV_defl);
-
+	
 	if(smethod==0){
 	  t1 = MPI_Wtime();
 	  K_vector->downloadFromCuda(sol,flag_eo);
 	  K_vector->download();
 	  deflation->projectVector(*K_vecdef,*K_vector,is+1,NeV_defl);
-	  // HP Solution is projected and put into x, x <- (1-UU^dag) x
+
+	  // The exact part is projected out of the HP Solution and put into 
+	  // x, x <- (1-UU^dag) x
 	  K_vecdef->uploadToCuda(x,flag_eo);
 	  t2 = MPI_Wtime();
 	  printfQuda("TIME_REPORT: NHP %04d - HP sol projection: %f sec\n",
@@ -9296,8 +9160,10 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 	  t1 = MPI_Wtime();
 	  K_vector->downloadFromCuda(sol_LP,flag_eo);
 	  K_vector->download();
+
+	  // The exact part is projected out of the LP Solution and put into 
+	  // x_LP, x_LP <- (1-UU^dag) x_LP
 	  deflation->projectVector(*K_vecdef,*K_vector,is+1,NeV_defl);
-	  // LP Solution is projected to: x_LP, x_LP <- (1-UU^dag) x_LP
 	  K_vecdef->uploadToCuda(x_LP,flag_eo);
 	  t2 = MPI_Wtime();
 	  printfQuda("TIME_REPORT: NHP %04d - LP sol projection: %f sec\n",
@@ -9329,7 +9195,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 	printfQuda("### TIME_REPORT: NHP %04d - Finished in %f sec\n",
 		   is+1,t4-t3);
 	
-
+	
 	// FFT and copy to write buffers
 	//-------------------------------------------------      
 	if( (is+1)%Nd == 0){
@@ -9610,7 +9476,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
     delete x_LP;
   }
 
-  if(stochEO) delete deflationEO;
+  //if(stochEO) delete deflationEO;
 
   printfQuda("...Done\n");
   popVerbosity();

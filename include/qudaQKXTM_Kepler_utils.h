@@ -109,7 +109,6 @@ namespace quda {
     // = { false  , false,  true   , true    ,  true  ,  true}
     bool loop_oneD[6];
     bool useTSM;
-    bool fullOp_stochEO;
     int TSM_NHP;
     int TSM_NLP;
     int TSM_NdumpHP;

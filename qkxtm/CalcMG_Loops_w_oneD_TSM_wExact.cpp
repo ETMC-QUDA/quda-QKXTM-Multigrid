@@ -114,7 +114,6 @@ extern char loop_fname[];
 extern char *loop_file_format;
 extern int Ndump;
 extern int smethod;
-extern bool fullOp_stochEO;
 extern char source_type[];
 extern char filename_dSteps[];
 extern bool useTSM;
@@ -138,21 +137,6 @@ extern double amin;
 extern double amax;
 extern bool isEven;
 extern bool isFullOp;
-
-//-C.K. ARPACK Parameters if we are using full operator and 
-//even-odd preconditioning for the stochastic part
-extern int PolyDeg_EO;
-extern int nEv_EO;
-extern int nKv_EO;
-extern char *spectrumPart_EO;
-extern bool isACC_EO;
-extern double tolArpack_EO;
-extern int maxIterArpack_EO;
-extern char arpack_logfile_EO[];
-extern double amin_EO;
-extern double amax_EO;
-extern bool isEven_EO;
-extern bool isFullOp_EO;
 
 
 namespace quda {
@@ -556,35 +540,6 @@ int main(int argc, char **argv)
     exit(-1);
   }
 
-  //-C.K. ARPACK Parameters if we are using full operator and 
-  //even-odd preconditioning for the stochastic part
-  qudaQKXTM_arpackInfo arpackInfoEO;
-  if(isFullOp && fullOp_stochEO){
-    arpackInfoEO.PolyDeg = PolyDeg_EO;
-    arpackInfoEO.nEv = nEv_EO;
-    arpackInfoEO.nKv = nKv_EO;
-    arpackInfoEO.isACC = isACC_EO;
-    arpackInfoEO.tolArpack = tolArpack_EO;
-    arpackInfoEO.maxIterArpack = maxIterArpack_EO;
-    strcpy(arpackInfoEO.arpack_logfile,arpack_logfile_EO);
-    arpackInfoEO.amin = amin_EO;
-    arpackInfoEO.amax = amax_EO;
-    arpackInfoEO.isEven = isEven_EO;
-    // by default we are not using the Full Operator, hard-coded
-    arpackInfoEO.isFullOp = false;
-
-    if(strcmp(spectrumPart_EO,"SR")==0)      arpackInfoEO.spectrumPart = SR;
-    else if(strcmp(spectrumPart_EO,"LR")==0) arpackInfoEO.spectrumPart = LR;
-    else if(strcmp(spectrumPart_EO,"SM")==0) arpackInfoEO.spectrumPart = SM;
-    else if(strcmp(spectrumPart_EO,"LM")==0) arpackInfoEO.spectrumPart = LM;
-    else if(strcmp(spectrumPart_EO,"SI")==0) arpackInfoEO.spectrumPart = SI;
-    else if(strcmp(spectrumPart_EO,"LI")==0) arpackInfoEO.spectrumPart = LI;
-    else{
-      printf("Error: Your spectrumPart option is suspicious\n");
-      exit(-1);
-    }
-  }
-
   //-C.K. General QKXTM information
   qudaQKXTMinfo_Kepler info;
   info.lL[0] = xdim;
@@ -607,8 +562,6 @@ int main(int argc, char **argv)
   loopInfo.Ndump = Ndump;
   loopInfo.traj = traj;
   loopInfo.Qsq = Q_sq;
-  //Hardcoded in this function
-  loopInfo.fullOp_stochEO = false;
   strcpy(loopInfo.loop_fname,loop_fname);
 
   if( strcmp(loop_file_format,"ASCII")==0 || 
@@ -738,8 +691,7 @@ int main(int argc, char **argv)
 
   //Launch calculation.
   calcMG_loop_wOneD_TSM_wExact(gauge_Plaq, &EVinv_param, &inv_param, 
-			       &gauge_param, arpackInfo, arpackInfoEO,
-			       loopInfo, info);
+			       &gauge_param, arpackInfo, loopInfo, info);
   
   // free the multigrid solver
   destroyMultigridQuda(mg_preconditioner);

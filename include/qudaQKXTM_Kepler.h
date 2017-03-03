@@ -493,9 +493,10 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 				  QudaInvertParam *param,
 				  QudaGaugeParam *gauge_param, 
 				  quda::qudaQKXTM_arpackInfo arpackInfo,
-				  quda::qudaQKXTM_arpackInfo arpackInfoEO, 
 				  quda::qudaQKXTM_loopInfo loopInfo, 
 				  quda::qudaQKXTMinfo_Kepler info);
 #endif
+// HAVE_ARPACK
 
 #endif
+//_QUDAQKXTM_KEPLER_H
