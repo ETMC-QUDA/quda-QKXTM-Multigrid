@@ -94,7 +94,6 @@ namespace quda {
     unsigned long int seed;
     int Ndump;
     char loop_fname[512];
-    int smethod;
 #ifdef HAVE_ARPACK
     int nSteps_defl;
     int deflStep[MAX_DEFLSTEPS];

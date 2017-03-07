@@ -113,7 +113,6 @@ extern unsigned long int seed;
 extern char loop_fname[];
 extern char *loop_file_format;
 extern int Ndump;
-extern int smethod;
 extern char source_type[];
 extern char filename_dSteps[];
 extern bool useTSM;

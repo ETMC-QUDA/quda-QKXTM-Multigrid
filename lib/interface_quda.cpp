@@ -7579,8 +7579,6 @@ void calcMG_loop_wOneD_TSM_EvenOdd(void **gaugeToPlaquette,
     K_vector->download();
     K_guess->uploadToCuda(out,flag_eo); // initial guess is ready
 
-    //QKXTM: DMH no smethod
-        
     if(useTSM) {
       //LP solve
       double orig_tol = param->tol;
@@ -7736,8 +7734,6 @@ void calcMG_loop_wOneD_TSM_EvenOdd(void **gaugeToPlaquette,
       // in is reference to the b but for a parity singlet
       // out is reference to the x but for a parity singlet
 
-      //QKXTM: DMH no smethod
-      
       //HP solve
       //-------------------------------------------------
       SolverParam solverParam(*param);
@@ -7761,7 +7757,7 @@ void calcMG_loop_wOneD_TSM_EvenOdd(void **gaugeToPlaquette,
       SolverParam solverParam_LP(*param);
       Solver *solve_LP = Solver::create(solverParam_LP, m, mSloppy, 
 					mPre, profileInvert);
-      (*solve_LP)(*out,*in);
+      (*solve_LP)(*out_LP,*in);
       delete solve_LP;
       dirac.reconstruct(*x_LP,*b,param->solution_type);
       
@@ -8101,15 +8097,6 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   loopInfo.Nmoms = GK_Nmoms;
   int Nmoms = GK_Nmoms;
   char filename_out[512];
-  // Stochastic method should be fixed to 0
-  int smethod = loopInfo.smethod;
-  if(smethod != 0) {
-    printfQuda("\nYour stochastic method is deprecated for MG\n");
-    printfQuda("enabled stochastic solutions. Switching to\n");
-    printfQuda("stochastic method 0.\n");
-    smethod = 0;
-  }
-
 
   FILE_WRITE_FORMAT LoopFileFormat = loopInfo.FileFormat;
 
@@ -8191,8 +8178,6 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   for(int s=0;s<loopInfo.nSteps_defl;s++){
     printfQuda("  %d",loopInfo.deflStep[s]);
   }
-  if(smethod==1) printfQuda("\n Stochastic part according to: MdagM psi = (1-P)Mdag xi (smethod=1)\n");
-  else printfQuda("\n Stochastic part according to: MdagM phi = Mdag xi (smethod=0)\n");
   if(info.source_type==RANDOM) printfQuda(" Will use RANDOM stochastic sources\n");
   else if (info.source_type==UNITY) printfQuda(" Will use UNITY stochastic sources\n");
   printfQuda("=====================\n\n");
@@ -8713,9 +8698,6 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   //       the exact part to accelerate the problem execution. We
   //       therefore simply solve for the stochastic source using MG,
   //       then project out the exact contribution from the solution.
-  //       This way, we can make estimates about the bias from the 
-  //       Truncated Solver Method using the exact contribution and the
-  //       inexact contribution separately.
 
   printfQuda("\n ### Stochastic part calculation ###\n\n");
 
@@ -8917,20 +8899,18 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
       int NeV_defl = loopInfo.deflStep[dstep];
       printfQuda("# Performing contractions for NeV = %d\n",NeV_defl);
       
-      if(smethod==0){
-	t1 = MPI_Wtime();	
-	K_vector->downloadFromCuda(sol,flag_eo);
-	K_vector->download();
-
-	// The exact part is projected out of the solution 
-	// and put into x, x <- (1-UU^dag) x
-	deflation->projectVector(*K_vecdef,*K_vector,is+1,NeV_defl);
-	K_vecdef->uploadToCuda(x,flag_eo);              
-
-	t2 = MPI_Wtime();
-	printfQuda("TIME_REPORT: %s %04d - Solution projection: %f sec\n",
-		   msg_str,is+1,t2-t1);
-      }
+      t1 = MPI_Wtime();	
+      K_vector->downloadFromCuda(sol,flag_eo);
+      K_vector->download();
+      
+      // Solution is projected and put into x, x <- (1-UU^dag) x
+      deflation->projectVector(*K_vecdef,*K_vector,is+1,NeV_defl);
+      K_vecdef->uploadToCuda(x,flag_eo);              
+      
+      t2 = MPI_Wtime();
+      printfQuda("TIME_REPORT: %s %04d - Solution projection: %f sec\n",
+		 msg_str,is+1,t2-t1);
+      
       
       t1 = MPI_Wtime();
       oneEndTrick_w_One_Der<double>(*x, *tmp3, *tmp4, param, 
@@ -9128,7 +9108,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
       SolverParam solverParam_LP(*param);
       Solver *solve_LP = Solver::create(solverParam_LP, m, mSloppy, 
 					mPre, profileInvert);
-      (*solve_LP)(*out,*in);
+      (*solve_LP)(*out_LP,*in);
       delete solve_LP;
       dirac.reconstruct(*x_LP,*b,param->solution_type);
       
@@ -9144,31 +9124,28 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 	int NeV_defl = loopInfo.deflStep[dstep];
 	printfQuda("# Performing TSM contractions for NeV = %d\n",NeV_defl);
 	
-	if(smethod==0){
-	  t1 = MPI_Wtime();
-	  K_vector->downloadFromCuda(sol,flag_eo);
-	  K_vector->download();
-	  deflation->projectVector(*K_vecdef,*K_vector,is+1,NeV_defl);
-
-	  // The exact part is projected out of the HP Solution and put into 
-	  // x, x <- (1-UU^dag) x
-	  K_vecdef->uploadToCuda(x,flag_eo);
-	  t2 = MPI_Wtime();
-	  printfQuda("TIME_REPORT: NHP %04d - HP sol projection: %f sec\n",
-		     is+1,t2-t1);	  
-
-	  t1 = MPI_Wtime();
-	  K_vector->downloadFromCuda(sol_LP,flag_eo);
-	  K_vector->download();
-
-	  // The exact part is projected out of the LP Solution and put into 
-	  // x_LP, x_LP <- (1-UU^dag) x_LP
-	  deflation->projectVector(*K_vecdef,*K_vector,is+1,NeV_defl);
-	  K_vecdef->uploadToCuda(x_LP,flag_eo);
-	  t2 = MPI_Wtime();
-	  printfQuda("TIME_REPORT: NHP %04d - LP sol projection: %f sec\n",
-		     is+1,t2-t1);
-	}
+	t1 = MPI_Wtime();
+	K_vector->downloadFromCuda(sol,flag_eo);
+	K_vector->download();
+	deflation->projectVector(*K_vecdef,*K_vector,is+1,NeV_defl);
+	
+	// Solution is projected and put into x, x <- (1-UU^dag) x
+	K_vecdef->uploadToCuda(x,flag_eo);
+	t2 = MPI_Wtime();
+	printfQuda("TIME_REPORT: NHP %04d - HP sol projection: %f sec\n",
+		   is+1,t2-t1);	  
+	
+	t1 = MPI_Wtime();
+	K_vector->downloadFromCuda(sol_LP,flag_eo);
+	K_vector->download();
+	
+	// Solution is projected and put into x, x <- (1-UU^dag) x
+	deflation->projectVector(*K_vecdef,*K_vector,is+1,NeV_defl);
+	K_vecdef->uploadToCuda(x_LP,flag_eo);
+	t2 = MPI_Wtime();
+	printfQuda("TIME_REPORT: NHP %04d - LP sol projection: %f sec\n",
+		   is+1,t2-t1);
+      
 	
 	// Contractions
 	//-------------------------------------------------
@@ -9459,7 +9436,6 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   free(input_vector);
 
   delete deflation;
-  //delete solve;
   delete d;
   delete dSloppy;
   delete dPre;
@@ -9472,7 +9448,6 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   delete tmp4;
 
   if(useTSM){
-    //delete solve_LP;
     delete x_LP;
   }
 
