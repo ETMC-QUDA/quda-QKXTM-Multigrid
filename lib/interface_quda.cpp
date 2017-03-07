@@ -9451,8 +9451,6 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
     delete x_LP;
   }
 
-  //if(stochEO) delete deflationEO;
-
   printfQuda("...Done\n");
   popVerbosity();
   saveTuneCache();
