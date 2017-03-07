@@ -7729,6 +7729,10 @@ void calcMG_loop_wOneD_TSM_EvenOdd(void **gaugeToPlaquette,
       K_vector->packVector((double*) input_vector);
       K_vector->loadVector();
       K_vector->uploadToCuda(b,flag_eo);
+
+      blas::zero(*out);
+      blas::zero(*out_LP);
+
       dirac.prepare(in,out,*x,*b,param->solution_type);
       dirac.prepare(in,out_LP,*x_LP,*b,param->solution_type);
       // in is reference to the b but for a parity singlet
@@ -9079,6 +9083,10 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
       K_vector->packVector((double*) input_vector);
       K_vector->loadVector();
       K_vector->uploadToCuda(b,flag_eo);
+      
+      blas::zero(*out);
+      blas::zero(*out_LP);
+      
       // in -> b, out -> x, for parity singlets
       dirac.prepare(in,out   ,*x   ,*b,param->solution_type); 
       dirac.prepare(in,out_LP,*x_LP,*b,param->solution_type);
