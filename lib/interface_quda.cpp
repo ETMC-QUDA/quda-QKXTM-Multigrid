@@ -6049,7 +6049,7 @@ void calcMG_threepTwop_EvenOdd(void **gauge_APE, void **gauge,
   if(param->gamma_basis != QUDA_UKQCD_GAMMA_BASIS) 
     errorQuda("%s: This function works only with ukqcd gamma basis\n", fname);
   if(param->dirac_order != QUDA_DIRAC_ORDER) 
-    errorQuda("%s: This function works only with colors inside the spins\n, fname");
+    errorQuda("%s: This function works only with colors inside the spins\n", fname);
 
   if( param->matpc_type == QUDA_MATPC_EVEN_EVEN )
     flag_eo = true;
@@ -6098,7 +6098,7 @@ void calcMG_threepTwop_EvenOdd(void **gauge_APE, void **gauge,
   for(int i=0;i<info.Nsources;i++) nRun3pt += info.run3pt_src[i];
 
   int NprojMax = 0;
-  if(nRun3pt==0) printfQuda("Will NOT perform the three-point function for any of the source positions\n", fname);
+  if(nRun3pt==0) printfQuda("%s: Will NOT perform the three-point function for any of the source positions\n", fname);
   else if (nRun3pt>0){
     printfQuda("Will perform the three-point function for %d source positions, for the following source-sink separations and projectors:\n",nRun3pt);
     for(int its=0;its<info.Ntsink;its++){
@@ -6175,25 +6175,25 @@ void calcMG_threepTwop_EvenOdd(void **gauge_APE, void **gauge,
   //Settings for HDF5 data write format
   if( CorrFileFormat==HDF5_FORM ){
     if( Thrp_local_HDF5 == NULL ) 
-      errorQuda("%s: Cannot allocate memory for Thrp_local_HDF5.\n");
+      errorQuda("%s: Cannot allocate memory for Thrp_local_HDF5.\n",fname);
     if( Thrp_noether_HDF5 == NULL ) 
-      errorQuda("%s: Cannot allocate memory for Thrp_noether_HDF5.\n");
+      errorQuda("%s: Cannot allocate memory for Thrp_noether_HDF5.\n",fname);
 
     memset(Thrp_local_HDF5  , 0, 2*16*alloc_size*2*info.Ntsink*NprojMax*sizeof(double));
     memset(Thrp_noether_HDF5, 0, 2* 4*alloc_size*2*info.Ntsink*NprojMax*sizeof(double));
 
     if( Thrp_oneD_HDF5 == NULL ) 
-      errorQuda("%s: Cannot allocate memory for Thrp_oneD_HDF5.\n");
+      errorQuda("%s: Cannot allocate memory for Thrp_oneD_HDF5.\n",fname);
     for(int mu=0;mu<4;mu++){
       if( Thrp_oneD_HDF5[mu] == NULL ) 
-	errorQuda("%s: Cannot allocate memory for Thrp_oned_HDF5[%d].\n",mu);      
+	errorQuda("%s: Cannot allocate memory for Thrp_oned_HDF5[%d].\n",fname,mu);      
       memset(Thrp_oneD_HDF5[mu], 0, 2*16*alloc_size*2*info.Ntsink*NprojMax*sizeof(double));
     }
     
     if( Twop_baryons_HDF5 == NULL ) 
-      errorQuda("%s: Cannot allocate memory for Twop_baryons_HDF5.\n");
+      errorQuda("%s: Cannot allocate memory for Twop_baryons_HDF5.\n",fname);
     if( Twop_mesons_HDF5  == NULL ) 
-      errorQuda("%s: Cannot allocate memory for Twop_mesons_HDF5.\n");
+      errorQuda("%s: Cannot allocate memory for Twop_mesons_HDF5.\n",fname);
 
     memset(Twop_baryons_HDF5, 0, 2*16*alloc_size*2*N_BARYONS*sizeof(double));
     memset(Twop_mesons_HDF5 , 0, 2   *alloc_size*2*N_MESONS *sizeof(double));
@@ -8071,7 +8071,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   pushVerbosity(param->verbosity);
   if (getVerbosity() >= QUDA_DEBUG_VERBOSE) printQudaInvertParam(param);
   
-  printfQuda("\n### %s: Loop calculation begins now\n\n");
+  printfQuda("\n### %s: Loop calculation begins now\n\n",fname);
 
   //-Checks for exact deflation part 
   profileInvert.TPSTART(QUDA_PROFILE_TOTAL);
@@ -8080,10 +8080,10 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
     errorQuda("Only asymmetric operators are supported in deflation\n");
   if( arpackInfo.isEven    && 
       (EvInvParam->matpc_type != QUDA_MATPC_EVEN_EVEN_ASYMMETRIC) ) 
-    errorQuda("%s: Inconsistency between operator types!");
+    errorQuda("%s: Inconsistency between operator types!",fname);
   if( (!arpackInfo.isEven) && 
       (EvInvParam->matpc_type != QUDA_MATPC_ODD_ODD_ASYMMETRIC) )   
-    errorQuda("%s: Inconsistency between operator types!");
+    errorQuda("%s: Inconsistency between operator types!",fname);
 
   //-Checks for stochastic approximation and generalities 
   if(param->inv_type != QUDA_GCR_INVERTER) 
@@ -8715,7 +8715,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   K_gauge->calculatePlaq();
 
   // QKXTM: DMH Calculation should default to these settings.
-  printfQuda("%s: Will solve the stochastic part using Multigrid.\n");
+  printfQuda("%s: Will solve the stochastic part using Multigrid.\n",fname);
 
   // QKXTM: DMH This is a fairly arbitrary setting in terms of
   //        solver performance. 
