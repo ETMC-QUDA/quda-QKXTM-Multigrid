@@ -11,9 +11,9 @@
 #include <errno.h>
 #include <mpi.h>
 #include <limits>
-//#include <mkl.h> //QXKTM: FIXME
-#include <cblas.h>
-#include <common.h>
+#include <mkl.h>
+//#include <cblas.h>
+//#include <common.h>
 #include <omp.h>
 #include <hdf5.h>
  
