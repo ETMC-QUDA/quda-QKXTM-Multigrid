@@ -578,6 +578,45 @@ int main(int argc, char **argv)
   if(loopInfo.Nstoch%loopInfo.Ndump==0) loopInfo.Nprint = loopInfo.Nstoch/loopInfo.Ndump;
   else errorQuda("NdumpStep MUST divide Nstoch exactly! Exiting.\n");
 
+
+  //-C.K. Determine the deflation steps
+  if(strcmp(filename_dSteps,"none")==0){
+    loopInfo.nSteps_defl = 1;
+    loopInfo.deflStep[0] = nEv;
+  }
+  else{
+    FILE *ptr_dstep;
+    if( (ptr_dstep = fopen(filename_dSteps,"r"))==NULL ){
+      fprintf(stderr,"Cannot open %s for reading. Exiting\n",filename_dSteps);
+      exit(-1);
+    }
+    fscanf(ptr_dstep,"%d\n",&loopInfo.nSteps_defl);
+    fscanf(ptr_dstep,"%d\n",&loopInfo.deflStep[0]);
+    if(loopInfo.deflStep[0]>nEv){
+      printf("ERROR: Supplied deflation step is larger than eigenvalues requested. Exiting.\n");
+      exit(-1);
+    }
+    for(int s=1;s<loopInfo.nSteps_defl;s++){
+      fscanf(ptr_dstep,"%d\n",&loopInfo.deflStep[s]);
+      if(loopInfo.deflStep[s]<loopInfo.deflStep[s-1]){
+        printf("ERROR: Deflation steps MUST be in ascending order. Exiting.\n");
+        exit(-1);
+      }
+      if(loopInfo.deflStep[s]>nEv){
+        printf("WARNING: Supplied deflation step %d is larger than eigenvalues requested. Discarding this step.\n",s);
+        s--;
+        loopInfo.nSteps_defl--;
+      }
+    }
+    fclose(ptr_dstep);
+
+    //- This is to always make sure that the total number of eigenvalues is included
+    if(loopInfo.deflStep[loopInfo.nSteps_defl-1] != nEv){
+      loopInfo.nSteps_defl++;
+      loopInfo.deflStep[loopInfo.nSteps_defl-1] = nEv;
+    }
+  }
+
   //- TSM parameters
   loopInfo.useTSM = useTSM;
   if(useTSM){
