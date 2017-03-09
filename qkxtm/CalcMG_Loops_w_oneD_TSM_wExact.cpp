@@ -661,11 +661,14 @@ int main(int argc, char **argv)
   QudaInvertParam inv_param = newQudaInvertParam();
   setInvertParam(inv_param);
 
+
+  //-C.K. Operator parameters for the Full Operator deflation
   QudaInvertParam EVinv_param = newQudaInvertParam();
   EVinv_param = inv_param;
   if(isEven) EVinv_param.matpc_type = QUDA_MATPC_EVEN_EVEN_ASYMMETRIC;
   else EVinv_param.matpc_type = QUDA_MATPC_ODD_ODD_ASYMMETRIC;
 
+  EVinv_param.mass_normalization = QUDA_MASS_NORMALIZATION;
 
   // declare the dimensions of the communication grid
   initCommsGridQuda(4, gridsize_from_cmdline, NULL, NULL);
@@ -692,6 +695,7 @@ int main(int argc, char **argv)
   for(int mu = 0 ; mu < 4 ; mu++)
     memcpy(gauge_Plaq[mu],gauge[mu],V*9*2*sizeof(double));
   mapEvenOddToNormalGauge(gauge_Plaq,gauge_param,xdim,ydim,zdim,tdim);
+  applyBoundaryCondition(gauge, V/2 ,&gauge_param);
 
   // start the timer
   double time0 = -((double)clock());
