@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <mpi.h>
 #include <limits>
-//#include <mkl.h> //QXKTM: FIXME
+//#include <mkl.h>
 #include <cblas.h>
 #include <common.h>
 #include <omp.h>

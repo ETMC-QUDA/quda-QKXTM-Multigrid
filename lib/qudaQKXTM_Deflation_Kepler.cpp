@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <mpi.h>
 #include <limits>
-//#include <mkl.h> //QXKTM: FIXME
+//#include <mkl.h>
 #include <cblas.h>
 #include <common.h>
 #include <omp.h>
@@ -1788,7 +1788,7 @@ projectVector(QKXTM_Vector_Kepler<Float> &vec_defl,
   if(!isFullOp) errorQuda("projectVector: This function only works with the Full Operator\n");
   
   if(NeV_defl == 0){
-    printfQuda("NeV = %d. Will not deflate source vector!\n",NeV_defl);
+    printfQuda("projectVector: Got NeV = %d. Will not project vector!\n",NeV_defl);
     vec_defl.packVector((Float*) vec_in.H_elem());
     vec_defl.loadVector();
     return;
@@ -1904,6 +1904,6 @@ projectVector(QKXTM_Vector_Kepler<Float> &vec_defl,
   free(out_vec);
   free(out_vec_reduce);
 
-  printfQuda("projectVector: Deflation of the source vector completed succesfully\n");
+  //  printfQuda("projectVector: Deflation of the source vector completed succesfully\n");
 }
 

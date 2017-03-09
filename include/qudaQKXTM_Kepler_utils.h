@@ -94,7 +94,6 @@ namespace quda {
     unsigned long int seed;
     int Ndump;
     char loop_fname[512];
-    int smethod;
 #ifdef HAVE_ARPACK
     int nSteps_defl;
     int deflStep[MAX_DEFLSTEPS];
@@ -109,7 +108,6 @@ namespace quda {
     // = { false  , false,  true   , true    ,  true  ,  true}
     bool loop_oneD[6];
     bool useTSM;
-    bool fullOp_stochEO;
     int TSM_NHP;
     int TSM_NLP;
     int TSM_NdumpHP;

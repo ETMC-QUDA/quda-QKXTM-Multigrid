@@ -14,7 +14,7 @@
 #define MAGMA_17 //default version version of the MAGMA library
 
 #ifdef MAGMA_LIB
-#include </users/howarth/GCC/magma-1.7.0/include/magma.h>
+#include <magma.h>
 
 #ifdef MAGMA_14
 

@@ -11,7 +11,7 @@
 #include <errno.h>
 #include <mpi.h>
 #include <limits>
-//#include <mkl.h> //QXKTM: FIXME
+//#include <mkl.h>
 #include <cblas.h>
 #include <common.h>
 #include <omp.h>
@@ -97,7 +97,7 @@ Loop_w_One_Der_FullOp_Exact(int n, QudaInvertParam *param,
   cudaColorSpinorField *x1 = NULL;
 
   double *eigVec = (double*) malloc(bytes_total_length_per_NeV);
- memcpy(eigVec,&(h_elem[n*total_length_per_NeV]),bytes_total_length_per_NeV);
+  memcpy(eigVec,&(h_elem[n*total_length_per_NeV]),bytes_total_length_per_NeV);
 
   QKXTM_Vector_Kepler<double> *Kvec = 
     new QKXTM_Vector_Kepler<double>(BOTH,VECTOR);
