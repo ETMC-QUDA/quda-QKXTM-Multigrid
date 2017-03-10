@@ -81,6 +81,9 @@ set(QUDA_POSIX_THREADS OFF CACHE BOOL "set to 'yes' to build pthread-enabled dsl
 #BLAS library
 set(QUDA_MAGMA OFF CACHE BOOL "build magma interface")
 
+#-C.K. Switch between Intel/MKL and GNU/OpenBlas
+set(QUDA_QKXTM_INTEL-BUILD OFF CACHE BOOL "build QKXTM with Intel")
+set(QUDA_QKXTM_GNU-BUILD OFF CACHE BOOL "build QKXTM with GNU")
 
 # Interface options
 set(QUDA_INTERFACE_QDP ON CACHE BOOL "build qdp interface")
@@ -93,13 +96,26 @@ set(QUDA_INTERFACE_TIFR OFF CACHE BOOL "build tifr interface")
 #QKXTM: DMH
 set(QUDA_INTERFACE_QKXTM ON CACHE BOOL "build QKXTM interface")
 set(QUDA_QKXTM_ARPACK OFF CACHE BOOL "enable QKXTM ARPACK")
+
 if(QUDA_INTERFACE_QKXTM)
-  # Locations for GSL HDF5 LIME OPENBLAS
+  # Locations for GSL HDF5 LIME
   set(QUDA_QKXTM_GSLHOME "" CACHE PATH "path to GSL")
   set(QUDA_QKXTM_LIMEHOME "" CACHE PATH "path to LIME")
   set(QUDA_QKXTM_HDF5HOME "" CACHE PATH "path to HDF5")
-  set(QUDA_QKXTM_OPENBLAS_BUILD "" CACHE PATH "path to OPENBLAS_BUILD")
-  set(QUDA_QKXTM_OPENBLAS_SRC "" CACHE PATH "path to OPENBLAS_SRC")
+
+#-C.K. Locations for OPENBLAS or MKL, depending on GNU/OpenBlas, Intel/MKL switches
+  if(${QUDA_QKXTM_GNU-BUILD})
+    set(QUDA_QKXTM_OPENBLAS_BUILD "" CACHE PATH "path to OPENBLAS_BUILD")
+    set(QUDA_QKXTM_OPENBLAS_SRC "" CACHE PATH "path to OPENBLAS_SRC")
+  endif()
+
+#-C.K. In facts, it seems that these options do not really contribute something,
+# but may be useful for future iterations
+  if(${QUDA_QKXTM_INTEL-BUILD})
+    set(QUDA_QKXTM_MKL_LIBDIR "" CACHE PATH "path to MKL library dir")
+    set(QUDA_QKXTM_MKL_INCDIR "" CACHE PATH "path to MKL include dir")
+  endif()
+#-C.K.
 
   if(QUDA_QKXTM_ARPACK)
     set(QUDA_QKXTM_ARPACKHOME "" CACHE PATH "path to ARPACK")
@@ -231,9 +247,19 @@ if(QUDA_INTERFACE_QKXTM)
   FIND_LIBRARY(QKXTM_LIME_LIB lime ${QUDA_QKXTM_LIMEHOME}/lib)
   include_directories(SYSTEM ${QUDA_QKXTM_LIMEHOME}/include)
 
-  add_definitions(-DHAVE_OPENBLAS)
-  FIND_LIBRARY(QKXTM_OPENBLAS_LIB openblas ${QUDA_QKXTM_OPENBLAS_BUILD}/lib)
-  include_directories(SYSTEM ${QUDA_QKXTM_OPENBLAS_SRC})
+#-C.K. Modified here to take OpenBlas and MKL switches into account  
+  if(${QUDA_QKXTM_GNU-BUILD})
+    add_definitions(-DHAVE_OPENBLAS)
+    FIND_LIBRARY(QKXTM_OPENBLAS_LIB openblas ${QUDA_QKXTM_OPENBLAS_BUILD}/lib)
+    include_directories(SYSTEM ${QUDA_QKXTM_OPENBLAS_SRC})
+  endif()
+
+  if(${QUDA_QKXTM_INTEL-BUILD})
+    add_definitions(-DHAVE_MKL)
+    FIND_LIBRARY(QKXTM_MKL_LIB mkl_intel_lp64 ${QUDA_QKXTM_MKL_LIBDIR})
+    include_directories(SYSTEM ${QUDA_QKXTM_MKL_INCDIR})
+  endif()
+#-C.K.
 
   include_directories(lib/code_pieces)
   include_directories(lib/code_pieces_Kepler)
