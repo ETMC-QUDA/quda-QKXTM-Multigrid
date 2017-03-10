@@ -7232,6 +7232,12 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   void **std_csvC[loopInfo.nSteps_defl];
   void **gen_csvC[loopInfo.nSteps_defl];
 
+  if((cudaHostAlloc(&tmp_loop,          
+		    sizeof(double)*2*16*GK_localVolume, 
+		    cudaHostAllocMapped)) != cudaSuccess)
+    errorQuda("%s: Error allocating memory tmp_loop\n",fname);
+  cudaMemset(tmp_loop, 0, sizeof(double)*2*16*GK_localVolume);
+
   for(int dstep=0;dstep<loopInfo.nSteps_defl;dstep++){  
     //- ultra-local loops
     if((cudaHostAlloc(&(std_uloc[dstep]), 
@@ -7242,14 +7248,9 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 		      sizeof(double)*2*16*GK_localVolume, 
 		      cudaHostAllocMapped)) != cudaSuccess)
       errorQuda("%s: Error allocating memory gen_uloc[%d]\n",fname,dstep);
-    if((cudaHostAlloc(&tmp_loop,          
-		      sizeof(double)*2*16*GK_localVolume, 
-		      cudaHostAllocMapped)) != cudaSuccess)
-      errorQuda("%s: Error allocating memory tmp_loop\n",fname);
     
     cudaMemset(std_uloc[dstep], 0, sizeof(double)*2*16*GK_localVolume);
     cudaMemset(gen_uloc[dstep], 0, sizeof(double)*2*16*GK_localVolume);
-    cudaMemset(tmp_loop       , 0, sizeof(double)*2*16*GK_localVolume);
     cudaDeviceSynchronize();
 
     //- one-Derivative and conserved current loops
@@ -8485,6 +8486,8 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   delete K_gauge;
   delete x;
   delete b;
+  delete h_x;
+  delete h_b;
   delete tmp3;
   delete tmp4;
 
