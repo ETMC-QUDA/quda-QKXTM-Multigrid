@@ -11,9 +11,16 @@
 #include <errno.h>
 #include <mpi.h>
 #include <limits>
-//#include <mkl.h>
+
+#ifdef HAVE_MKL
+#include <mkl.h>
+#endif
+
+#ifdef HAVE_OPENBLAS
 #include <cblas.h>
 #include <common.h>
+#endif
+
 #include <omp.h>
 #include <hdf5.h>
  
