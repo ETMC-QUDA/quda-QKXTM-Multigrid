@@ -58,6 +58,7 @@ endif(QUDA_QKXTM_ARPACK)
 cuda_add_executable(CalcMG_2pt3pt_EvenOdd CalcMG_2pt3pt_EvenOdd.cpp ../tests/wilson_dslash_reference.cpp ../tests/domain_wall_dslash_reference.cpp ../tests/clover_reference.cpp ../tests/blas_reference.cpp)
 target_link_libraries(CalcMG_2pt3pt_EvenOdd ${QKXTM_LIBS})
 
+if(QUDA_QKXTM_ARPACK)
 #CalcMG_Loops_w_oneD_TSM_EvenOdd
 # This function will calculate the All-to-All propagator with a covariant 
 # derivate, and correlation functions thereof. It employs undiluted 
@@ -74,7 +75,6 @@ target_link_libraries(CalcMG_Loops_w_oneD_TSM_EvenOdd ${QKXTM_LIBS})
 # stochastic sources, Even/Odd preconditioning, functionality for using the 
 # Trunacted Solver Method, as well as QUDA's MG solver routines for the 
 # remainder.
-if(QUDA_QKXTM_ARPACK)
   cuda_add_executable(CalcMG_Loops_w_oneD_TSM_wExact CalcMG_Loops_w_oneD_TSM_wExact.cpp ../tests/wilson_dslash_reference.cpp ../tests/domain_wall_dslash_reference.cpp ../tests/clover_reference.cpp ../tests/blas_reference.cpp)
   target_link_libraries(CalcMG_Loops_w_oneD_TSM_wExact ${QKXTM_LIBS})
 endif(QUDA_QKXTM_ARPACK)
