@@ -165,11 +165,14 @@ read gauge fileld config stored in binary file
 	      
 	      strcpy	(tmpVar, "kappa =");
 	      sscanf(qcd_getParamComma(tmpVar,lime_data, lime_data_size),"%lf",&dDummy);    
-	      printfQuda("Kappa given is : %f \t Kappa conf is : %f \t check them agree\n", inv_param->kappa , dDummy);
-	      
+	      printfQuda("Kappa given is: %10.8f \t Kappa conf is: %10.8f\n", inv_param->kappa , dDummy);
+	      if(inv_param->kappa != dDummy){
+		warningQuda("Kappa given and kappa from configuration do not agree!\n");
+	      }
+
 	      strcpy	(tmpVar, "mu =");
 	      sscanf(qcd_getParamComma(tmpVar,lime_data, lime_data_size),"%lf",&dDummy);
-	      printfQuda("Mu given is : %f \t Mu conf is : %f \t may disagree for heavy quark\n" , inv_param->mu , dDummy);
+	      printfQuda("Mu given is: %f \t Mu conf is: %f \t. May disagree for heavy quarks!\n" , inv_param->mu , dDummy);
 	      
 	      free(lime_data);
 	}
