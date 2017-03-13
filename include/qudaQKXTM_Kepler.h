@@ -373,6 +373,7 @@ namespace quda {
 			       WHICHPARTICLE NUCLEON);
   };
 
+#ifdef HAVE_ARPACK
   ////////////////////////////
   // CLASS: QKXTM_Deflation //
   //////////////////////////// 
@@ -461,7 +462,7 @@ namespace quda {
 		       int is, int NeV_defl);
     void copyToEigenVector(Float *vec, Float *vals);
   };
-  
+#endif  
 }
 // End quda namespace
 

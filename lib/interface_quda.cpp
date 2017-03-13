@@ -8501,8 +8501,6 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   profileInvert.TPSTOP(QUDA_PROFILE_TOTAL);
 }
 
-#endif
-
 
 //-===========================================================
 //- A D D I T I O N A L  D E P R E C A T E D   R O U T I N E S
@@ -9483,3 +9481,4 @@ void calcMG_loop_wOneD_TSM_EvenOdd(void **gaugeToPlaquette,
   saveTuneCache();
   profileInvert.TPSTOP(QUDA_PROFILE_TOTAL);
 }
+#endif
