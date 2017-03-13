@@ -1685,6 +1685,8 @@ double clover_coeff = 0.1;
 bool compute_clover = false;
 double tol = 1e-7;
 double tol_hq = 0.;
+int mg_setup_maxiter = 500;
+double mg_setup_tol = 5.0e-6;
 QudaTwistFlavorType twist_flavor = QUDA_TWIST_PLUS;
 bool kernel_pack_t = false;
 QudaMassNormalization normalization = QUDA_KAPPA_NORMALIZATION;
@@ -1759,6 +1761,8 @@ void usage(char** argv )
   printf("    --solve-type                              # The type of solve to do (direct, direct-pc, normop, normop-pc, normerr, normerr-pc) \n");
   printf("    --tol  <resid_tol>                        # Set L2 residual tolerance\n");
   printf("    --tolhq  <resid_hq_tol>                   # Set heavy-quark residual tolerance\n");
+  printf("    --mg-setup-maxiter <maxiter>              # Maximum # of iterations for the MG setup in BiCGStab (default 500)\n");
+  printf("    --mg-setup-tol <tol>                      # Tolerance for the MG setup in BiCGStab (default 5.0e-6)\n");
   printf("    --tune <true/false>                       # Whether to autotune or not (default true)\n");     
   printf("    --test                                    # Test method (different for each test)\n");
   printf("    --verify <true/false>                     # Verify the GPU results using CPU results (default true)\n");
@@ -2397,6 +2401,26 @@ int process_command_line_option(int argc, char** argv, int* idx)
       usage(argv);
     }
     tol_hq= atof(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  if( strcmp(argv[i], "--mg-setup-maxiter") == 0){
+    if (i+1 >= argc){
+      usage(argv);
+    }
+    mg_setup_maxiter = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  if( strcmp(argv[i], "--mg-setup-tol") == 0){
+    if (i+1 >= argc){
+      usage(argv);
+    }
+    mg_setup_tol = atof(argv[i+1]);
     i++;
     ret = 0;
     goto out;

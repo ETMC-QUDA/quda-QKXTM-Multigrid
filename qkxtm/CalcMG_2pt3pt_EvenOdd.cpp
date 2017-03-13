@@ -64,6 +64,9 @@ extern double tol; // tolerance for inverter
 extern double tol_hq; // heavy-quark tolerance for inverter
 extern QudaMassNormalization normalization; // mass normalization of Dirac operators
 
+extern int mg_setup_maxiter;
+extern double mg_setup_tol;
+
 extern int niter;
 extern int nvec[];
 extern int mg_levels;
@@ -398,6 +401,9 @@ void setMultigridParam(QudaMultigridParam &mg_param) {
     mg_param.cycle_type[i] = QUDA_MG_CYCLE_RECURSIVE;
     
     mg_param.smoother[i] = smoother_type;
+
+    mg_param.setup_maxiter = mg_setup_maxiter;
+    mg_param.setup_tol = mg_setup_tol;
 
     // set the smoother / bottom solver tolerance 
     // (for MR smoothing this will be ignored)

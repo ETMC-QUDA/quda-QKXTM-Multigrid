@@ -362,6 +362,12 @@ extern "C" {
     /** Tolerance to use for the smoother / solver on each level */
     double smoother_tol[QUDA_MAX_MG_LEVEL];
 
+    /** C.K. BiCGStab MG setup maxiter */
+    int setup_maxiter;
+
+    /** C.K. BiCGStab MG setup tolerance */
+    double setup_tol;
+
     /** Over/under relaxation factor for the smoother at each level */
     double omega[QUDA_MAX_MG_LEVEL];
 
