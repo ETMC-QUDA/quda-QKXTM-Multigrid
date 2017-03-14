@@ -283,8 +283,6 @@ void setInvertParam(QudaInvertParam &inv_param) {
   inv_param.solve_type = QUDA_DIRECT_PC_SOLVE;  
   
   inv_param.inv_type = QUDA_GCR_INVERTER;
-  inv_param.verbosity = QUDA_VERBOSE;
-  inv_param.verbosity_precondition = QUDA_SILENT;
 
   inv_param.inv_type_precondition = QUDA_MG_INVERTER;
 
@@ -318,16 +316,20 @@ void setInvertParam(QudaInvertParam &inv_param) {
   inv_param.omega = 1.0;
 
 
-  //if(strcmp(verbosity_level,"verbose")==0) 
-  //inv_param.verbosity = QUDA_VERBOSE;
-  //else if(strcmp(verbosity_level,"summarize")==0) 
-  //inv_param.verbosity = QUDA_SUMMARIZE;
-  //else if(strcmp(verbosity_level,"silent")==0) 
-  //inv_param.verbosity = QUDA_SILENT;
-  //else{
-  //warningQuda("Unknown verbosity level %s. Proceeding with QUDA_SUMMARIZE verbosity level\n",verbosity_level);
-  //inv_param.verbosity = QUDA_SUMMARIZE;
-  //}
+  //-C.K. Verbosity options
+  inv_param.verbosity_precondition = QUDA_SILENT;
+
+  if(strcmp(verbosity_level,"verbose")==0)
+    inv_param.verbosity = QUDA_VERBOSE;
+  else if(strcmp(verbosity_level,"summarize")==0)
+    inv_param.verbosity = QUDA_SUMMARIZE;
+  else if(strcmp(verbosity_level,"silent")==0)
+    inv_param.verbosity = QUDA_SILENT;
+  else{
+    warningQuda("Unknown verbosity level %s. Proceeding with QUDA_SUMMARIZE verbosity level\n",verbosity_level);
+    inv_param.verbosity = QUDA_SUMMARIZE;
+  }
+
 }
 
 void setMultigridParam(QudaMultigridParam &mg_param) {
