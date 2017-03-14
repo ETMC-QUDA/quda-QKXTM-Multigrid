@@ -1602,6 +1602,8 @@ char proj_list_file[257] = "default";
 
 char *corr_write_space = "MOMENTUM";
 
+bool HighMomForm = true;
+
 //-C.K. loop Parameters
 int Nstoch = 100;     // Number of stochastic noise vectors
 unsigned long int seed   = 100;  // The seed for the stochastic vectors
@@ -1820,6 +1822,7 @@ void usage(char** argv )
   printf("    --check-corr-files                        # check if 2pt-functions exist to avoid reproducing (default \"no\")\n");
   printf("    --proj-list                               # path to a file-list of projectors for 3pt function (default: only G4)\n");
   printf("    --corr-write-space                        # write the correlation functions in position space (MOMENTUM/POSITION, default: MOMENTUM)\n");
+  printf("    --HighMomForm                             # whether to write the correlation functions in HighMomentum Format (only for HDF5) (yes/no, default: yes)\n");
 
   //-C.K. Loop INPUT
   printf("    --Q-sqMax-loop                            # The maximum Q^2 momentum (loop) (default 0)\n");
@@ -1842,7 +1845,7 @@ void usage(char** argv )
   printf("    --pathEigenVectorsDown                    # Path where the eigenVectors for up flavor are (default ev_d.0000)\n");
   printf("    --pathEigenValuesUp                       # Path where the eigenVectors for up flavor are (default evals_u.dat)\n");
   printf("    --pathEigenValuesDown                     # Path where the eigenVectors for up flavor are (default evals_d.dat)\n");
-
+  
   //-C.K. ARPACK EXACT INPUT
   printf("    --PolyDeg                                 # The degree of the polynomial Acceleration (default 100)\n");
   printf("    --nEv                                     # Number of eigenvalues requested by ARPACK (default 100)\n");
@@ -1856,10 +1859,10 @@ void usage(char** argv )
   printf("    --amaxARPACK                              # amax parameter used in Cheb. Poly. Acc. (default 3.5)\n");
   printf("    --UseFullOp                               # Whether to use the Full Operator (yes,no, default no)\n");
   printf("    --defl_steps                              # File to deflation steps (default none)\n");
-
+  
 #endif
   //--------//
-
+  
   printf("    --help                                    # Print out this message\n"); 
   usage_extra(argv); 
 #ifdef MULTI_GPU
@@ -1871,7 +1874,7 @@ void usage(char** argv )
   exit(1);
   return ;
 }
-
+ 
 int process_command_line_option(int argc, char** argv, int* idx)
 {
 #ifdef MULTI_GPU
@@ -1879,20 +1882,20 @@ int process_command_line_option(int argc, char** argv, int* idx)
 #else
   char msg[]="single";
 #endif
-
+  
   int ret = -1;
   
   int i = *idx;
-
+  
   if( strcmp(argv[i], "--help")== 0){
     usage(argv);
   }
-
+  
   if( strcmp(argv[i], "--verify") == 0){
     if (i+1 >= argc){
       usage(argv);
     }	    
-
+    
     if (strcmp(argv[i+1], "true") == 0){
       verify_results = true;
     }else if (strcmp(argv[i+1], "false") == 0){
@@ -3025,6 +3028,18 @@ int process_command_line_option(int argc, char** argv, int* idx)
       usage(argv);
     }    
     corr_write_space = strdup(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  if( strcmp(argv[i], "--HighMomForm") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    if( strcmp(argv[i+1],"yes")==0 || strcmp(argv[i+1],"YES")==0 ) HighMomForm = true;
+    else if ( strcmp(argv[i+1],"no")==0 || strcmp(argv[i+1],"NO")==0 ) HighMomForm = false;
+    else usage(argv);
     i++;
     ret = 0;
     goto out;

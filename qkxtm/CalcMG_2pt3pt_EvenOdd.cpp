@@ -122,6 +122,7 @@ extern int Nproj;
 extern char proj_list_file[];
 
 extern char *corr_write_space;
+extern bool HighMomForm;
 
 namespace quda {
   extern void setTransferGPU(bool);
@@ -501,6 +502,11 @@ int main(int argc, char **argv)
   info.Nsources = numSourcePositions;
   info.Q_sq = Q_sq;
   info.traj = traj;
+  info.HighMomForm = HighMomForm;
+  info.kappa = kappa;
+  info.csw = csw;
+  info.mu = mu;
+  info.inv_tol = tol;
 
   if(strcmp(check_file_exist,"yes")==0 || 
      strcmp(check_file_exist,"YES")==0 )  info.check_files = true;
