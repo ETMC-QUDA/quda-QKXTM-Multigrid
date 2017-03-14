@@ -697,9 +697,12 @@ namespace quda {
     SolverParam solverParam(param);
 
     // set null-space generation options - need to expose these
+    //-C.K. Setup's max iterations and tolerance can now be set from the user
     //solverParam.maxiter = 500;
-    solverParam.maxiter = 200;
-    solverParam.tol = 1e-9;
+    //solverParam.maxiter = 200;
+    //solverParam.tol = 1e-9;
+    solverParam.maxiter = param.mg_global.setup_maxiter;
+    solverParam.tol = param.mg_global.setup_tol;
     solverParam.use_init_guess = QUDA_USE_INIT_GUESS_YES;
     solverParam.delta = 1e-7;
     solverParam.inv_type = QUDA_BICGSTAB_INVERTER;
