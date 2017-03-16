@@ -212,16 +212,17 @@ contractBaryons(QKXTM_Propagator_Kepler<Float> &prop1,
 //---------------------------------------//
 
 template<typename Float>
-void QKXTM_Contraction_Kepler<Float>::
-writeTwopBaryonsHDF5(void *twopBaryons, 
-		     char *filename, 
-		     qudaQKXTMinfo_Kepler info, 
-		     int isource){
+void QKXTM_Contraction_Kepler<Float>::writeTwopBaryonsHDF5(void *twopBaryons, char *filename, qudaQKXTMinfo_Kepler info, int isource){
 
-  if(info.CorrSpace==MOMENTUM_SPACE)      
-    writeTwopBaryonsHDF5_MomSpace((void*)twopBaryons,filename,info,isource);
-  else if(info.CorrSpace==POSITION_SPACE) 
-    writeTwopBaryonsHDF5_PosSpace((void*)twopBaryons,filename,info,isource);
+  if(info.CorrSpace==MOMENTUM_SPACE){
+    if(info.HighMomForm){
+      writeTwopBaryonsHDF5_MomSpace_HighMomForm((void*) twopBaryons, filename, info, isource);
+    }
+    else{
+      writeTwopBaryonsHDF5_MomSpace((void*) twopBaryons, filename, info, isource);
+    }
+  }
+  else if(info.CorrSpace==POSITION_SPACE) writeTwopBaryonsHDF5_PosSpace((void*) twopBaryons, filename, info, isource);
   else errorQuda("writeTwopBaryonsHDF5: Unsupported value for info.CorrSpace! Supports only POSITION_SPACE and MOMENTUM_SPACE!\n");
 
 }
@@ -364,7 +365,7 @@ writeTwopBaryonsHDF5_MomSpace(void *twopBaryons,
 			      qudaQKXTMinfo_Kepler info, 
 			      int isource){
 
-  if(info.CorrSpace!=MOMENTUM_SPACE) errorQuda("writeTwopBaryonsHDF5_MomSpace: Support for writing the Baryon two-point function only in momentum-space!\n");
+  if(info.CorrSpace!=MOMENTUM_SPACE || info.HighMomForm) errorQuda("writeTwopBaryonsHDF5_MomSpace: Supports writing the Baryon two-point function only in momentum-space and for NOT High-Momenta Form!\n");
 
   if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
 
@@ -543,6 +544,228 @@ writeTwopBaryonsHDF5_MomSpace(void *twopBaryons,
 
 }
 
+
+//-C.K. - New function to write the baryons two-point function in HDF5 format, momentum-space, High-Momenta Form
+template<typename Float>
+void QKXTM_Contraction_Kepler<Float>::writeTwopBaryonsHDF5_MomSpace_HighMomForm(void *twopBaryons, char *filename, qudaQKXTMinfo_Kepler info, int isource){
+
+  if(info.CorrSpace!=MOMENTUM_SPACE || !info.HighMomForm) errorQuda("writeTwopBaryonsHDF5_MomSpace_HighMomForm: Supports writing the Baryon two-point function only in momentum-space and for HighMomForm!\n");
+
+  if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
+
+    hid_t DATATYPE_H5;
+    if( typeid(Float) == typeid(float) ){
+      DATATYPE_H5 = H5T_NATIVE_FLOAT;
+      printfQuda("writeTwopBaryonsHDF5_MomSpace: Will write in single precision\n");
+    }
+    if( typeid(Float) == typeid(double)){
+      DATATYPE_H5 = H5T_NATIVE_DOUBLE;
+      printfQuda("writeTwopBaryonsHDF5_MomSpace: Will write in double precision\n");
+    }
+
+    int t_src = GK_sourcePosition[isource][3];
+    int Lt = GK_localL[3];
+    int T  = GK_totalL[3];
+    int Nmoms = GK_Nmoms;
+
+    int src_rank = t_src/Lt;
+    int sink_rank = ((t_src-1)%T)/Lt;
+    int h = Lt - t_src%Lt;
+    int tail = t_src%Lt;
+
+    Float *writeTwopBuf;
+
+    hid_t fapl_id = H5Pcreate(H5P_FILE_ACCESS);
+    H5Pset_fapl_mpio(fapl_id, GK_timeComm, MPI_INFO_NULL);
+    hid_t file_id = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, fapl_id);
+    H5Pclose(fapl_id);
+
+    char *group1_tag;
+    asprintf(&group1_tag,"conf_%04d",info.traj);
+    hid_t group1_id = H5Gcreate(file_id, group1_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    char *group2_tag;
+    asprintf(&group2_tag,"sx%02dsy%02dsz%02dst%02d",GK_sourcePosition[isource][0],GK_sourcePosition[isource][1],GK_sourcePosition[isource][2],GK_sourcePosition[isource][3]);
+    hid_t group2_id = H5Gcreate(group1_id, group2_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    hid_t group3_id;
+
+    hsize_t dims[4] = {T, Nmoms ,16 ,2}; // Size of the dataspace
+
+    //-Determine the ldims for each rank (tail not taken into account)
+    hsize_t ldims[4];
+    ldims[1] = dims[1]; //
+    ldims[2] = dims[2]; //-These are common among all ranks
+    ldims[3] = dims[3]; //
+    if(GK_timeRank==src_rank) ldims[0] = h; // local-dimension size
+    else ldims[0] = Lt;                     // for time for each rank
+
+    //-Determine the start position for each rank
+    hsize_t start[4];
+    start[1] = 0; //
+    start[2] = 0; // -These are common among all ranks
+    start[3] = 0; //
+    if(GK_timeRank==src_rank) start[0] = 0; // if src_rank == sink_rank then this holds for the sink rank as well
+    else{
+      int offs;
+      for(offs=0;offs<GK_nProc[3];offs++){
+        if( GK_timeRank == ((src_rank+offs)%GK_nProc[3]) ) break;
+      }
+      offs--;
+      start[0] = h + offs*Lt;
+    }
+
+    for(int bar=0;bar<N_BARYONS;bar++){
+      char *group3_tag;
+      asprintf(&group3_tag,"%s",info.baryon_type[bar]);
+      group3_id = H5Gcreate(group2_id, group3_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+      
+      hid_t filespace  = H5Screate_simple(4, dims, NULL);
+      hid_t subspace   = H5Screate_simple(4, ldims, NULL);
+
+      for(int ip=0;ip<2;ip++){
+        char *dset_tag;
+        asprintf(&dset_tag,"twop_baryon_%d",ip+1);
+        
+        hid_t dataset_id = H5Dcreate(group3_id, dset_tag, DATATYPE_H5, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        filespace = H5Dget_space(dataset_id);
+        H5Sselect_hyperslab(filespace, H5S_SELECT_SET, start, NULL, ldims, NULL);
+        hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
+        H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+        
+        if(GK_timeRank==src_rank) writeTwopBuf = &(((Float*)twopBaryons)[2*16*Nmoms*tail + 2*16*Nmoms*Lt*bar + 2*16*Nmoms*Lt*N_BARYONS*ip]);
+        else writeTwopBuf = &(((Float*)twopBaryons)[2*16*Nmoms*Lt*bar + 2*16*Nmoms*Lt*N_BARYONS*ip]);
+        
+        herr_t status = H5Dwrite(dataset_id, DATATYPE_H5, subspace, filespace, plist_id, writeTwopBuf);
+        
+        H5Dclose(dataset_id);
+        H5Pclose(plist_id);
+      }//-ip
+      H5Sclose(subspace);
+      H5Sclose(filespace);
+      H5Gclose(group3_id);
+    }//-bar
+
+    H5Gclose(group2_id);
+    H5Gclose(group1_id);
+    H5Fclose(file_id);
+
+    //-Write the tail, sink_ranks's task
+    if(tail!=0 && GK_timeRank==sink_rank){ 
+      Float *tailBuf;
+
+      hid_t file_idt = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
+
+      ldims[0] = tail;
+      ldims[1] = Nmoms;
+      ldims[2] = 16;
+      ldims[3] = 2;
+
+      start[0] = T-tail;
+      start[1] = 0;
+      start[2] = 0;
+      start[3] = 0;
+
+      for(int bar=0;bar<N_BARYONS;bar++){
+        char *group_tag;
+        asprintf(&group_tag,"conf_%04d/sx%02dsy%02dsz%02dst%02d/%s",info.traj,GK_sourcePosition[isource][0],GK_sourcePosition[isource][1],GK_sourcePosition[isource][2],GK_sourcePosition[isource][3],info.baryon_type[bar]);  
+        hid_t group_id = H5Gopen(file_idt, group_tag, H5P_DEFAULT);
+
+        for(int ip=0;ip<2;ip++){
+          char *dset_tag;
+          asprintf(&dset_tag,"twop_baryon_%d",ip+1);
+
+          hid_t dset_id   = H5Dopen(group_id, dset_tag, H5P_DEFAULT);
+          hid_t mspace_id = H5Screate_simple(4, ldims, NULL);
+          hid_t dspace_id = H5Dget_space(dset_id);
+          
+          H5Sselect_hyperslab(dspace_id, H5S_SELECT_SET, start, NULL, ldims, NULL);
+          
+          tailBuf = &(((Float*)twopBaryons)[2*16*Nmoms*Lt*bar + 2*16*Nmoms*Lt*N_BARYONS*ip]);
+          
+          herr_t status = H5Dwrite(dset_id, DATATYPE_H5, mspace_id, dspace_id, H5P_DEFAULT, tailBuf);
+          
+          H5Dclose(dset_id);
+          H5Sclose(mspace_id);
+          H5Sclose(dspace_id);
+        }
+        H5Gclose(group_id);
+      }//-bar
+
+      H5Fclose(file_idt);
+    }//-tail!=0
+
+    //-Write the momenta in a separate dataset (including some attributes)
+    if(GK_timeRank==sink_rank){
+      hid_t file_idt   = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
+
+      char *cNmoms, *cQsq,*corr_info,*ens_info;
+      asprintf(&cNmoms,"%d\0",GK_Nmoms);
+      asprintf(&cQsq,"%d\0",info.Q_sq);
+      asprintf(&corr_info,
+	       "Momentum-space baryon 2pt-correlator\nQuark field basis: Physical\nIndex Order: [t, mom-index, spin, real/imag]\nSpin-index order: Row-major\nPrecision: %s\nInversion tolerance = %e\0",
+	       (typeid(Float) == typeid(float)) ? "single" : "double", info.inv_tol);
+      asprintf(&ens_info,"kappa = %10.8f\nmu = %8.6f\nCsw = %8.6f\0",info.kappa, info.mu, info.csw);
+      hid_t attrdat_id1 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id2 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id3 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id4 = H5Screate(H5S_SCALAR);
+      hid_t type_id1 = H5Tcopy(H5T_C_S1);
+      hid_t type_id2 = H5Tcopy(H5T_C_S1);
+      hid_t type_id3 = H5Tcopy(H5T_C_S1);
+      hid_t type_id4 = H5Tcopy(H5T_C_S1);
+      H5Tset_size(type_id1, strlen(cNmoms));
+      H5Tset_size(type_id2, strlen(cQsq));
+      H5Tset_size(type_id3, strlen(corr_info));
+      H5Tset_size(type_id4, strlen(ens_info));
+      hid_t attr_id1 = H5Acreate2(file_idt, "Nmoms", type_id1, attrdat_id1, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id2 = H5Acreate2(file_idt, "Qsq"  , type_id2, attrdat_id2, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id3 = H5Acreate2(file_idt, "Correlator-info", type_id3, attrdat_id3, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id4 = H5Acreate2(file_idt, "Ensemble-info", type_id4, attrdat_id4, H5P_DEFAULT, H5P_DEFAULT);
+      H5Awrite(attr_id1, type_id1, cNmoms);
+      H5Awrite(attr_id2, type_id2, cQsq);
+      H5Awrite(attr_id3, type_id3, corr_info);
+      H5Awrite(attr_id4, type_id4, ens_info);
+      H5Aclose(attr_id1);
+      H5Aclose(attr_id2);
+      H5Aclose(attr_id3);
+      H5Aclose(attr_id4);
+      H5Tclose(type_id1);
+      H5Tclose(type_id2);
+      H5Tclose(type_id3);
+      H5Tclose(type_id4);
+      H5Sclose(attrdat_id1);
+      H5Sclose(attrdat_id2);
+      H5Sclose(attrdat_id3);
+      H5Sclose(attrdat_id4);
+
+      hid_t MOMTYPE_H5 = H5T_NATIVE_INT;
+      char *dset_tag;
+      asprintf(&dset_tag,"Momenta_list_xyz");
+
+      hsize_t Mdims[2] = {(hsize_t)Nmoms,3};
+      hid_t filespace  = H5Screate_simple(2, Mdims, NULL);
+      hid_t dataset_id = H5Dcreate(file_idt, dset_tag, MOMTYPE_H5, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+      int *Moms_H5 = (int*) malloc(GK_Nmoms*3*sizeof(int));
+      for(int im=0;im<GK_Nmoms;im++){
+        for(int d=0;d<3;d++) Moms_H5[d + 3*im] = GK_moms[im][d];
+      }
+
+      herr_t status = H5Dwrite(dataset_id, MOMTYPE_H5, H5S_ALL, filespace, H5P_DEFAULT, Moms_H5);
+
+      H5Dclose(dataset_id);
+      H5Sclose(filespace);
+      H5Fclose(file_idt);
+
+      free(Moms_H5);
+    }//-if GK_timeRank==0
+
+  }//-if GK_timeRank >=0 && GK_timeRank < GK_nProc[3]
+
+}
+
+
 //-C.K. - New function to copy the baryon two-point functions into write 
 // Buffers for writing in HDF5 format
 template<typename Float>
@@ -550,48 +773,72 @@ void QKXTM_Contraction_Kepler<Float>::
 copyTwopBaryonsToHDF5_Buf(void *Twop_baryons_HDF5, 
 			  void *corrBaryons, 
 			  int isource, 
-			  CORR_SPACE CorrSpace){
+			  CORR_SPACE CorrSpace, bool HighMomForm){
 
   int Lt = GK_localL[3];
   int SpVol = GK_localVolume/Lt;
   int t_src = GK_sourcePosition[isource][3];
+  int Nmoms = GK_Nmoms;
 
   if(CorrSpace==MOMENTUM_SPACE){
-  if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){      
 
-    for(int ip=0;ip<2;ip++){
-      for(int bar=0;bar<N_BARYONS;bar++){
-	for(int imom=0;imom<GK_Nmoms;imom++){
-	  for(int it=0;it<Lt;it++){
-	    int t_glob = GK_timeRank*Lt+it;
-	    int sign = t_glob < t_src ? -1 : +1;
-	    for(int ga=0;ga<4;ga++){
-	      for(int gap=0;gap<4;gap++){
-		int im=gap+4*ga;
-		((Float*)Twop_baryons_HDF5)[0 + 2*im + 2*16*it + 2*16*Lt*imom + 2*16*Lt*GK_Nmoms*bar + 2*16*Lt*GK_Nmoms*N_BARYONS*ip] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[0 + 2*imom + 2*GK_Nmoms*it][ip][bar][ga][gap];
-		((Float*)Twop_baryons_HDF5)[1 + 2*im + 2*16*it + 2*16*Lt*imom + 2*16*Lt*GK_Nmoms*bar + 2*16*Lt*GK_Nmoms*N_BARYONS*ip] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[1 + 2*imom + 2*GK_Nmoms*it][ip][bar][ga][gap];
-	      }}}}}
-    }//-ip
+    if(HighMomForm){
+      if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){      
+        
+        for(int ip=0;ip<2;ip++){
+          for(int bar=0;bar<N_BARYONS;bar++){
+            for(int imom=0;imom<GK_Nmoms;imom++){
+              for(int it=0;it<Lt;it++){
+                int t_glob = GK_timeRank*Lt+it;
+                int sign = t_glob < t_src ? -1 : +1;
+                for(int ga=0;ga<4;ga++){
+                  for(int gap=0;gap<4;gap++){
+                    int im=gap+4*ga;
+                    ((Float*)Twop_baryons_HDF5)[0 + 2*im + 2*16*imom + 2*16*Nmoms*it + 2*16*Nmoms*Lt*bar + 2*16*Nmoms*Lt*N_BARYONS*ip] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[0 + 2*imom + 2*Nmoms*it][ip][bar][ga][gap];
+                    ((Float*)Twop_baryons_HDF5)[1 + 2*im + 2*16*imom + 2*16*Nmoms*it + 2*16*Nmoms*Lt*bar + 2*16*Nmoms*Lt*N_BARYONS*ip] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[1 + 2*imom + 2*Nmoms*it][ip][bar][ga][gap];
+                  }}}}}
+        }//-ip
+        
+      }//-if GK_timeRank
+    }//-if HighMomForm
+    else{
+      if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){      
+        
+        for(int ip=0;ip<2;ip++){
+          for(int bar=0;bar<N_BARYONS;bar++){
+            for(int imom=0;imom<GK_Nmoms;imom++){
+              for(int it=0;it<Lt;it++){
+                int t_glob = GK_timeRank*Lt+it;
+                int sign = t_glob < t_src ? -1 : +1;
+                for(int ga=0;ga<4;ga++){
+                  for(int gap=0;gap<4;gap++){
+                    int im=gap+4*ga;
+                    ((Float*)Twop_baryons_HDF5)[0 + 2*im + 2*16*it + 2*16*Lt*imom + 2*16*Lt*Nmoms*bar + 2*16*Lt*Nmoms*N_BARYONS*ip] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[0 + 2*imom + 2*Nmoms*it][ip][bar][ga][gap];
+                    ((Float*)Twop_baryons_HDF5)[1 + 2*im + 2*16*it + 2*16*Lt*imom + 2*16*Lt*Nmoms*bar + 2*16*Lt*Nmoms*N_BARYONS*ip] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[1 + 2*imom + 2*Nmoms*it][ip][bar][ga][gap];
+                  }}}}}
+        }//-ip
+        
+      }//-if GK_timeRank
+    }//-else HighMomForm
 
-    }//-if GK_timeRank
   }//-if CorrSpace
   else if(CorrSpace==POSITION_SPACE){
 
     for(int ip=0;ip<2;ip++){
       for(int bar=0;bar<N_BARYONS;bar++){
-	for(int ga=0;ga<4;ga++){
-	  for(int gap=0;gap<4;gap++){
-	    int im=gap+4*ga;
-	    for(int it=0;it<Lt;it++){
-	      int t_glob = comm_coords(default_topo)[3]*Lt+it;
-	      int sign = t_glob < t_src ? -1 : +1;
-	      for(int sv=0;sv<SpVol;sv++){
-		((Float*)Twop_baryons_HDF5)[0 + 2*im + 2*16*sv + 2*16*SpVol*it + 2*16*SpVol*Lt*ip + 2*16*SpVol*Lt*2*bar] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[0 + 2*sv + 2*SpVol*it][ip][bar][ga][gap];
-		((Float*)Twop_baryons_HDF5)[1 + 2*im + 2*16*sv + 2*16*SpVol*it + 2*16*SpVol*Lt*ip + 2*16*SpVol*Lt*2*bar] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[1 + 2*sv + 2*SpVol*it][ip][bar][ga][gap];
-	      }}}}}
+        for(int ga=0;ga<4;ga++){
+          for(int gap=0;gap<4;gap++){
+            int im=gap+4*ga;
+            for(int it=0;it<Lt;it++){
+              int t_glob = comm_coords(default_topo)[3]*Lt+it;
+              int sign = t_glob < t_src ? -1 : +1;
+              for(int sv=0;sv<SpVol;sv++){
+                ((Float*)Twop_baryons_HDF5)[0 + 2*im + 2*16*sv + 2*16*SpVol*it + 2*16*SpVol*Lt*ip + 2*16*SpVol*Lt*2*bar] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[0 + 2*sv + 2*SpVol*it][ip][bar][ga][gap];
+                ((Float*)Twop_baryons_HDF5)[1 + 2*im + 2*16*sv + 2*16*SpVol*it + 2*16*SpVol*Lt*ip + 2*16*SpVol*Lt*2*bar] = sign*((Float(*)[2][N_BARYONS][4][4])corrBaryons)[1 + 2*sv + 2*SpVol*it][ip][bar][ga][gap];
+              }}}}}
     }//-ip
-    
-  }//-else if
+
+  }//-else CorrSpace
 
 }
 
@@ -709,10 +956,15 @@ writeTwopMesonsHDF5(void *twopMesons,
 		    qudaQKXTMinfo_Kepler info, 
 		    int isource){
 
-  if(info.CorrSpace==MOMENTUM_SPACE) 
-    writeTwopMesonsHDF5_MomSpace((void*)twopMesons, filename, info, isource);
-  else if(info.CorrSpace==POSITION_SPACE) 
-    writeTwopMesonsHDF5_PosSpace((void*)twopMesons, filename, info, isource);
+  if(info.CorrSpace==MOMENTUM_SPACE){
+    if(info.HighMomForm){
+      writeTwopMesonsHDF5_MomSpace_HighMomForm((void*)twopMesons, filename, info, isource);
+    }
+    else{
+      writeTwopMesonsHDF5_MomSpace((void*)twopMesons, filename, info, isource);
+    }
+  }
+  else if(info.CorrSpace==POSITION_SPACE) writeTwopMesonsHDF5_PosSpace((void*)twopMesons, filename, info, isource);
   else errorQuda("writeTwopMesonsHDF5: Unsupported value for info.CorrSpace! Supports only POSITION_SPACE and MOMENTUM_SPACE!\n");
 
 }
@@ -853,7 +1105,7 @@ writeTwopMesonsHDF5_MomSpace(void *twopMesons,
 			     qudaQKXTMinfo_Kepler info, 
 			     int isource){
 
-  if(info.CorrSpace!=MOMENTUM_SPACE) errorQuda("writeTwopMesonsHDF5_MomSpace: Support for writing the Meson two-point function only in momentum-space!\n");
+  if(info.CorrSpace!=MOMENTUM_SPACE || info.HighMomForm) errorQuda("writeTwopMesonsHDF5_MomSpace: Supports writing the Meson two-point function only in momentum-space and for NOT High-Momenta Form!\n");
 
   if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
 
@@ -1028,37 +1280,277 @@ writeTwopMesonsHDF5_MomSpace(void *twopMesons,
 
 }
 
+
+//-C.K. - New function to write the mesons two-point function in HDF5 format, momentum-space, High-Momenta Form
+template<typename Float>
+void QKXTM_Contraction_Kepler<Float>::writeTwopMesonsHDF5_MomSpace_HighMomForm(void *twopMesons, char *filename, qudaQKXTMinfo_Kepler info, int isource){
+
+  if(info.CorrSpace!=MOMENTUM_SPACE || !info.HighMomForm) errorQuda("writeTwopMesonsHDF5_MomSpace_HighMomForm: Supports writing the Meson two-point function only in momentum-space and for HighMomForm!\n");
+
+  if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
+
+    hid_t DATATYPE_H5;
+    if( typeid(Float) == typeid(float) ){
+      DATATYPE_H5 = H5T_NATIVE_FLOAT;
+      printfQuda("writeTwopMesonsHDF5_MomSpace: Will write in single precision\n");
+    }
+    if( typeid(Float) == typeid(double)){
+      DATATYPE_H5 = H5T_NATIVE_DOUBLE;
+      printfQuda("writeTwopMesons_HDF5_MomSpace: Will write in double precision\n");
+    }
+
+    int t_src = GK_sourcePosition[isource][3];
+    int Lt = GK_localL[3];
+    int T  = GK_totalL[3];
+    int Nmoms = GK_Nmoms;
+
+    int src_rank = t_src/Lt;
+    int sink_rank = ((t_src-1)%T)/Lt;
+    int h = Lt - t_src%Lt;
+    int tail = t_src%Lt;
+
+    Float *writeTwopBuf;
+
+    hid_t fapl_id = H5Pcreate(H5P_FILE_ACCESS);
+    H5Pset_fapl_mpio(fapl_id, GK_timeComm, MPI_INFO_NULL);
+    hid_t file_id = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, fapl_id);
+    H5Pclose(fapl_id);
+
+    char *group1_tag;
+    asprintf(&group1_tag,"conf_%04d",info.traj);
+    hid_t group1_id = H5Gcreate(file_id, group1_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    char *group2_tag;
+    asprintf(&group2_tag,"sx%02dsy%02dsz%02dst%02d",GK_sourcePosition[isource][0],GK_sourcePosition[isource][1],GK_sourcePosition[isource][2],GK_sourcePosition[isource][3]);
+    hid_t group2_id = H5Gcreate(group1_id, group2_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    hid_t group3_id;
+
+    hsize_t dims[3] = {T,Nmoms,2}; // Size of the dataspace
+
+    //-Determine the ldims for each rank (tail not taken into account)
+    hsize_t ldims[3];
+    ldims[1] = dims[1];
+    ldims[2] = dims[2];
+    if(GK_timeRank==src_rank) ldims[0] = h;
+    else ldims[0] = Lt;
+
+    //-Determine the start position for each rank
+    hsize_t start[3];
+    if(GK_timeRank==src_rank) start[0] = 0; // if src_rank = sink_rank then this is the same for both
+    else{
+      int offs;
+      for(offs=0;offs<GK_nProc[3];offs++){
+        if( GK_timeRank == ((src_rank+offs)%GK_nProc[3]) ) break;
+      }
+      offs--;
+      start[0] = h + offs*Lt;
+    }
+    start[1] = 0; //-This is common among all ranks
+    start[2] = 0; //
+
+    for(int mes=0;mes<N_MESONS;mes++){
+      char *group3_tag;
+      asprintf(&group3_tag,"%s",info.meson_type[mes]);
+      group3_id = H5Gcreate(group2_id, group3_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        
+      hid_t filespace  = H5Screate_simple(3, dims, NULL);
+      hid_t subspace   = H5Screate_simple(3, ldims, NULL);
+      
+      for(int ip=0;ip<2;ip++){
+        char *dset_tag;
+        asprintf(&dset_tag,"twop_meson_%d",ip+1);
+        
+        hid_t dataset_id = H5Dcreate(group3_id, dset_tag, DATATYPE_H5, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        filespace = H5Dget_space(dataset_id);
+        H5Sselect_hyperslab(filespace, H5S_SELECT_SET, start, NULL, ldims, NULL);
+        hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
+        H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+        
+        if(GK_timeRank==src_rank) writeTwopBuf = &(((Float*)twopMesons)[2*Nmoms*tail + 2*Nmoms*Lt*mes + 2*Nmoms*Lt*N_MESONS*ip]);
+        else writeTwopBuf = &(((Float*)twopMesons)[2*Nmoms*Lt*mes + 2*Nmoms*Lt*N_MESONS*ip]);
+        
+        herr_t status = H5Dwrite(dataset_id, DATATYPE_H5, subspace, filespace, plist_id, writeTwopBuf);
+        
+        H5Dclose(dataset_id);
+        H5Pclose(plist_id);
+      }//-ip
+      H5Sclose(subspace);
+      H5Sclose(filespace);
+      H5Gclose(group3_id);
+    }//-mes
+
+    H5Gclose(group2_id);
+    H5Gclose(group1_id);
+    H5Fclose(file_id);
+
+    //-Write the tail, sink_ranks's task
+    if(tail!=0 && GK_timeRank==sink_rank){ 
+      Float *tailBuf;
+
+      hid_t file_idt = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
+
+      ldims[0] = tail;
+      ldims[1] = Nmoms;
+      ldims[2] = 2;
+      start[0] = T-tail;
+      start[1] = 0;
+      start[2] = 0;
+
+      for(int mes=0;mes<N_MESONS;mes++){
+        char *group_tag;
+        asprintf(&group_tag,"conf_%04d/sx%02dsy%02dsz%02dst%02d/%s",info.traj,GK_sourcePosition[isource][0],GK_sourcePosition[isource][1],GK_sourcePosition[isource][2],GK_sourcePosition[isource][3],info.meson_type[mes]);  
+        hid_t group_id = H5Gopen(file_idt, group_tag, H5P_DEFAULT);
+        
+        for(int ip=0;ip<2;ip++){
+          char *dset_tag;
+          asprintf(&dset_tag,"twop_meson_%d",ip+1);
+          
+          hid_t dset_id  = H5Dopen(group_id, dset_tag, H5P_DEFAULT);
+          hid_t mspace_id  = H5Screate_simple(3, ldims, NULL);
+          hid_t dspace_id = H5Dget_space(dset_id);
+          
+          H5Sselect_hyperslab(dspace_id, H5S_SELECT_SET, start, NULL, ldims, NULL);
+          
+          tailBuf = &(((Float*)twopMesons)[2*Nmoms*Lt*mes + 2*Nmoms*Lt*N_MESONS*ip]);
+          
+          herr_t status = H5Dwrite(dset_id, DATATYPE_H5, mspace_id, dspace_id, H5P_DEFAULT, tailBuf);
+          
+          H5Dclose(dset_id);
+          H5Sclose(mspace_id);
+          H5Sclose(dspace_id);
+        }
+        H5Gclose(group_id);
+      }//-mes
+
+      H5Fclose(file_idt);
+    }//-tail!=0
+
+    //-Write the momenta in a separate dataset (including some attributes)
+    if(GK_timeRank==sink_rank){
+      hid_t file_idt   = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
+
+      char *cNmoms, *cQsq,*corr_info,*ens_info;;
+      asprintf(&cNmoms,"%d\0",GK_Nmoms);
+      asprintf(&cQsq,"%d\0",info.Q_sq);
+      asprintf(&corr_info,
+               "Momentum-space meson 2pt-correlator\nQuark field basis: Physical\nIndex Order: [t, mom-index, real/imag]\nPrecision: %s\nInversion tolerance = %e\0",
+               (typeid(Float) == typeid(float)) ? "single" : "double", info.inv_tol);
+      asprintf(&ens_info,"kappa = %10.8f\nmu = %8.6f\nCsw = %8.6f\0",info.kappa, info.mu, info.csw);
+      hid_t attrdat_id1 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id2 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id3 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id4 = H5Screate(H5S_SCALAR);
+      hid_t type_id1 = H5Tcopy(H5T_C_S1);
+      hid_t type_id2 = H5Tcopy(H5T_C_S1);
+      hid_t type_id3 = H5Tcopy(H5T_C_S1);
+      hid_t type_id4 = H5Tcopy(H5T_C_S1);
+      H5Tset_size(type_id1, strlen(cNmoms));
+      H5Tset_size(type_id2, strlen(cQsq));
+      H5Tset_size(type_id3, strlen(corr_info));
+      H5Tset_size(type_id4, strlen(ens_info));
+      hid_t attr_id1 = H5Acreate2(file_idt, "Nmoms", type_id1, attrdat_id1, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id2 = H5Acreate2(file_idt, "Qsq"  , type_id2, attrdat_id2, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id3 = H5Acreate2(file_idt, "Correlator-info", type_id3, attrdat_id3, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id4 = H5Acreate2(file_idt, "Ensemble-info", type_id4, attrdat_id4, H5P_DEFAULT, H5P_DEFAULT);
+      H5Awrite(attr_id1, type_id1, cNmoms);
+      H5Awrite(attr_id2, type_id2, cQsq);
+      H5Awrite(attr_id3, type_id3, corr_info);
+      H5Awrite(attr_id4, type_id4, ens_info);
+      H5Aclose(attr_id1);
+      H5Aclose(attr_id2);
+      H5Aclose(attr_id3);
+      H5Aclose(attr_id4);
+      H5Tclose(type_id1);
+      H5Tclose(type_id2);
+      H5Tclose(type_id3);
+      H5Tclose(type_id4);
+      H5Sclose(attrdat_id1);
+      H5Sclose(attrdat_id2);
+      H5Sclose(attrdat_id3);
+      H5Sclose(attrdat_id4);
+
+      hid_t MOMTYPE_H5 = H5T_NATIVE_INT;
+      char *dset_tag;
+      asprintf(&dset_tag,"Momenta_list_xyz");
+
+      hsize_t Mdims[2] = {(hsize_t)Nmoms,3};
+      hid_t filespace  = H5Screate_simple(2, Mdims, NULL);
+      hid_t dataset_id = H5Dcreate(file_idt, dset_tag, MOMTYPE_H5, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+      int *Moms_H5 = (int*) malloc(GK_Nmoms*3*sizeof(int));
+      for(int im=0;im<GK_Nmoms;im++){
+        for(int d=0;d<3;d++) Moms_H5[d + 3*im] = GK_moms[im][d];
+      }
+
+      herr_t status = H5Dwrite(dataset_id, MOMTYPE_H5, H5S_ALL, filespace, H5P_DEFAULT, Moms_H5);
+
+      H5Dclose(dataset_id);
+      H5Sclose(filespace);
+      H5Fclose(file_idt);
+
+      free(Moms_H5);
+    }//-if GK_timeRank==0
+
+
+  }//-if GK_timeRank >=0 && GK_timeRank < GK_nProc[3]
+
+}
+
+
+
 //-C.K. - New function to copy the meson two-point functions into write 
 //Buffers for writing in HDF5 format
 template<typename Float>
 void QKXTM_Contraction_Kepler<Float>::
 copyTwopMesonsToHDF5_Buf(void *Twop_mesons_HDF5, 
 			 void *corrMesons, 
-			 CORR_SPACE CorrSpace){
+			 CORR_SPACE CorrSpace, bool HighMomForm){
+
+  int Lt = GK_localL[3];
+  int Nmoms = GK_Nmoms;
 
   if(CorrSpace==MOMENTUM_SPACE){
-    if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
 
-      for(int ip=0;ip<2;ip++){
-	for(int mes=0;mes<N_MESONS;mes++){
-	  for(int imom=0;imom<GK_Nmoms;imom++){
-	    for(int it=0;it<GK_localL[3];it++){
-	      ((Float*)Twop_mesons_HDF5)[0 + 2*it + 2*GK_localL[3]*imom + 2*GK_localL[3]*GK_Nmoms*mes + 2*GK_localL[3]*GK_Nmoms*N_MESONS*ip] = ((Float(*)[2][N_MESONS])corrMesons)[0 + 2*imom + 2*GK_Nmoms*it][ip][mes];
-	      ((Float*)Twop_mesons_HDF5)[1 + 2*it + 2*GK_localL[3]*imom + 2*GK_localL[3]*GK_Nmoms*mes + 2*GK_localL[3]*GK_Nmoms*N_MESONS*ip] = ((Float(*)[2][N_MESONS])corrMesons)[1 + 2*imom + 2*GK_Nmoms*it][ip][mes];
-	    }}}
-      }//-ip
+    if(HighMomForm){
+      if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
+        
+        for(int ip=0;ip<2;ip++){
+          for(int mes=0;mes<N_MESONS;mes++){
+            for(int imom=0;imom<Nmoms;imom++){
+              for(int it=0;it<Lt;it++){
+                ((Float*)Twop_mesons_HDF5)[0 + 2*imom + 2*Nmoms*it + 2*Nmoms*Lt*mes + 2*Nmoms*Lt*N_MESONS*ip] = ((Float(*)[2][N_MESONS])corrMesons)[0 + 2*imom + 2*Nmoms*it][ip][mes];
+                ((Float*)Twop_mesons_HDF5)[1 + 2*imom + 2*Nmoms*it + 2*Nmoms*Lt*mes + 2*Nmoms*Lt*N_MESONS*ip] = ((Float(*)[2][N_MESONS])corrMesons)[1 + 2*imom + 2*Nmoms*it][ip][mes];
+              }}}
+        }//-ip
+        
+      }//-if GK_timeRank
+    }//-if HighMomForm
+    else{
+      if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
+        
+        for(int ip=0;ip<2;ip++){
+          for(int mes=0;mes<N_MESONS;mes++){
+            for(int imom=0;imom<Nmoms;imom++){
+              for(int it=0;it<Lt;it++){
+                ((Float*)Twop_mesons_HDF5)[0 + 2*it + 2*Lt*imom + 2*Lt*Nmoms*mes + 2*Lt*Nmoms*N_MESONS*ip] = ((Float(*)[2][N_MESONS])corrMesons)[0 + 2*imom + 2*Nmoms*it][ip][mes];
+                ((Float*)Twop_mesons_HDF5)[1 + 2*it + 2*Lt*imom + 2*Lt*Nmoms*mes + 2*Lt*Nmoms*N_MESONS*ip] = ((Float(*)[2][N_MESONS])corrMesons)[1 + 2*imom + 2*Nmoms*it][ip][mes];
+              }}}
+        }//-ip
+        
+      }//-if GK_timeRank
+    }//-else HighMomForm
 
-    }//-if GK_timeRank
   }//-if CorrSpace
   else if(CorrSpace==POSITION_SPACE){
     int Lv = GK_localVolume;
 
     for(int ip=0;ip<2;ip++){
       for(int mes=0;mes<N_MESONS;mes++){
-	for(int v=0;v<Lv;v++){
-	  ((Float*)Twop_mesons_HDF5)[0 + 2*v + 2*Lv*ip + 2*Lv*2*mes] = ((Float(*)[2][N_MESONS])corrMesons)[0 + 2*v][ip][mes];
-	  ((Float*)Twop_mesons_HDF5)[1 + 2*v + 2*Lv*ip + 2*Lv*2*mes] = ((Float(*)[2][N_MESONS])corrMesons)[1 + 2*v][ip][mes];
-	}}
+        for(int v=0;v<Lv;v++){
+          ((Float*)Twop_mesons_HDF5)[0 + 2*v + 2*Lv*ip + 2*Lv*2*mes] = ((Float(*)[2][N_MESONS])corrMesons)[0 + 2*v][ip][mes];
+          ((Float*)Twop_mesons_HDF5)[1 + 2*v + 2*Lv*ip + 2*Lv*2*mes] = ((Float(*)[2][N_MESONS])corrMesons)[1 + 2*v][ip][mes];
+        }}
     }//-ip
 
   }//-else if
@@ -1207,19 +1699,16 @@ writeThrpHDF5(void *Thrp_local_HDF5,
 	      qudaQKXTMinfo_Kepler info, 
 	      int isource, 
 	      WHICHPARTICLE NUCLEON){
-  
-  if(info.CorrSpace==MOMENTUM_SPACE)      
-    writeThrpHDF5_MomSpace((void*) Thrp_local_HDF5, 
-			   (void*) Thrp_noether_HDF5, 
-			   (void**)Thrp_oneD_HDF5, 
-			   filename, info, 
-			   isource, NUCLEON);  
-  else if(info.CorrSpace==POSITION_SPACE) 
-    writeThrpHDF5_PosSpace((void*) Thrp_local_HDF5, 
-			   (void*) Thrp_noether_HDF5, 
-			   (void**)Thrp_oneD_HDF5, 
-			   filename, info, 
-			   isource, NUCLEON);
+
+  if(info.CorrSpace==MOMENTUM_SPACE){
+    if(info.HighMomForm){
+      writeThrpHDF5_MomSpace_HighMomForm((void*) Thrp_local_HDF5, (void*) Thrp_noether_HDF5, (void**)Thrp_oneD_HDF5, filename, info, isource, NUCLEON);
+    }
+    else{
+      writeThrpHDF5_MomSpace((void*) Thrp_local_HDF5, (void*) Thrp_noether_HDF5, (void**)Thrp_oneD_HDF5, filename, info, isource, NUCLEON);
+    }
+  }
+  else if(info.CorrSpace==POSITION_SPACE) writeThrpHDF5_PosSpace((void*) Thrp_local_HDF5, (void*) Thrp_noether_HDF5, (void**)Thrp_oneD_HDF5, filename, info, isource, NUCLEON);
   else errorQuda("writeThrpHDF5: Unsupported value for info.CorrSpace! Supports only POSITION_SPACE and MOMENTUM_SPACE!\n");
 
 }
@@ -1508,7 +1997,7 @@ writeThrpHDF5_MomSpace(void *Thrp_local_HDF5,
 		       int isource, 
 		       WHICHPARTICLE NUCLEON){
   
-  if(info.CorrSpace!=MOMENTUM_SPACE) errorQuda("writeThrpHDF5_MomSpace: Support for writing the three-point function only in momentum-space!\n");
+  if(info.CorrSpace!=MOMENTUM_SPACE || info.HighMomForm) errorQuda("writeThrpHDF5_MomSpace: Supports writing the three-point function only in momentum-space and for NOT High-Momenta Form!\n");
 
   if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
 
@@ -1869,6 +2358,393 @@ writeThrpHDF5_MomSpace(void *Thrp_local_HDF5,
   }//-if
 }
 
+//-C.K. - New function to write the three-point function in HDF5 format, momentum-space, in High-Momenta Form
+template<typename Float>
+void QKXTM_Contraction_Kepler<Float>::writeThrpHDF5_MomSpace_HighMomForm(void *Thrp_local_HDF5, void *Thrp_noether_HDF5, void **Thrp_oneD_HDF5, char *filename, qudaQKXTMinfo_Kepler info, int isource, WHICHPARTICLE NUCLEON){
+
+  if(info.CorrSpace!=MOMENTUM_SPACE && !info.HighMomForm) errorQuda("writeThrpHDF5_MomSpace: Support for writing the three-point function only in momentum-space for high # of momenta!\n");
+
+  if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
+
+    hid_t DATATYPE_H5;
+    if( typeid(Float) == typeid(float) ){
+      DATATYPE_H5 = H5T_NATIVE_FLOAT;
+      printfQuda("writeThrpHDF5_MomSpace: Will write in single precision\n");
+    }
+    if( typeid(Float) == typeid(double)){
+      DATATYPE_H5 = H5T_NATIVE_DOUBLE;
+      printfQuda("writeThrp_HDF5_MomSpace: Will write in double precision\n");
+    }
+
+    Float *writeThrpBuf;
+
+    int Nsink = info.Ntsink;
+    int t_src = GK_sourcePosition[isource][3];
+    int Lt = GK_localL[3];
+    int T  = GK_totalL[3];
+    int Mel;
+    int Nmoms = GK_Nmoms;
+
+    int src_rank = t_src/Lt;
+    int h = Lt - t_src%Lt;
+    int w = t_src%Lt;
+
+    hid_t fapl_id = H5Pcreate(H5P_FILE_ACCESS);
+    H5Pset_fapl_mpio(fapl_id, GK_timeComm, MPI_INFO_NULL);
+    hid_t file_id = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, fapl_id);
+    H5Pclose(fapl_id);
+
+    char *group1_tag;
+    asprintf(&group1_tag,"conf_%04d",info.traj);
+    hid_t group1_id = H5Gcreate(file_id, group1_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    char *group2_tag;
+    asprintf(&group2_tag,"sx%02dsy%02dsz%02dst%02d",GK_sourcePosition[isource][0],GK_sourcePosition[isource][1],GK_sourcePosition[isource][2],GK_sourcePosition[isource][3]);
+    hid_t group2_id = H5Gcreate(group1_id, group2_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    hid_t group3_id;
+    hid_t group4_id;
+    hid_t group5_id;
+    hid_t group6_id;
+    hid_t group7_id;
+
+    hsize_t dims[4],ldims[4],start[4];
+
+    for(int its=0;its<Nsink;its++){
+      int tsink = info.tsinkSource[its];
+      char *group3_tag;
+      asprintf(&group3_tag,"tsink_%02d",tsink);
+      group3_id = H5Gcreate(group2_id, group3_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+      bool all_print = false;
+      if( tsink >= (T - t_src%Lt) ) all_print = true;
+
+      int sink_rank = ((t_src+tsink)%T)/Lt;
+      int l = ((t_src+tsink)%T)%Lt + 1; //-Significant only for sink_rank
+
+      //-Determine which processes will print for this tsink
+      bool print_rank;
+      if(all_print) print_rank = true;
+      else{
+        print_rank = false;
+        for(int i=0;i<GK_nProc[3];i++){
+          if( GK_timeRank == ((src_rank+i)%GK_nProc[3]) ) print_rank = true;
+          if( ((src_rank+i)%GK_nProc[3]) == sink_rank ) break;
+        }
+      }
+      
+      //-Determine the start position for each rank
+      if(print_rank){
+        if(GK_timeRank==src_rank) start[0] = 0; // if src_rank = sink_rank then this is the same for sink_rank as well
+        else{
+          int offs;
+          for(offs=0;offs<GK_nProc[3];offs++){
+            if( GK_timeRank == ((src_rank+offs)%GK_nProc[3]) ) break;
+          }
+          offs--;
+          start[0] = h + offs*Lt;
+        }
+      }
+      else start[0] = 0; // Need to set this to zero when a given rank does not print. Otherwise the dimensions will not fit   
+      start[1] = 0; //
+      start[2] = 0; //-These are common among all ranks
+      start[3] = 0; //
+
+      for(int ipr=0;ipr<info.Nproj[its];ipr++){
+        char *group4_tag;
+        asprintf(&group4_tag,"proj_%s",info.thrp_proj_type[info.proj_list[its][ipr]]);
+        group4_id = H5Gcreate(group3_id, group4_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+      
+        for(int part=0;part<2;part++){
+          char *group5_tag;
+          asprintf(&group5_tag,"%s", (part==0) ? "up" : "down");
+          group5_id = H5Gcreate(group4_id, group5_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        
+          for(int thrp_int=0;thrp_int<3;thrp_int++){
+            THRP_TYPE type = (THRP_TYPE) thrp_int;
+
+            char *group6_tag;
+            asprintf(&group6_tag,"%s", info.thrp_type[thrp_int]);
+            group6_id = H5Gcreate(group5_id, group6_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+          
+            //-Determine the global dimensions
+            if(type==THRP_LOCAL || type==THRP_ONED) Mel = 16;
+            else if (type==THRP_NOETHER) Mel = 4;
+            else errorQuda("writeThrpHDF5_MomSpace: Undefined three-point function type.\n");
+            dims[0] = tsink+1;
+            dims[1] = Nmoms;
+            dims[2] = Mel;
+            dims[3] = 2;
+
+            //-Determine ldims for print ranks
+            if(all_print){
+              ldims[1] = dims[1];
+              ldims[2] = dims[2];
+              ldims[3] = dims[3];
+              if(GK_timeRank==src_rank) ldims[0] = h;
+              else ldims[0] = Lt;
+            }
+            else{
+              if(print_rank){
+                ldims[1] = dims[1];
+                ldims[2] = dims[2];
+                ldims[3] = dims[3];
+                if(src_rank != sink_rank){
+                  if(GK_timeRank==src_rank) ldims[0] = h;
+                  else if(GK_timeRank==sink_rank) ldims[0] = l;
+                  else ldims[0] = Lt;
+                }
+                else ldims[0] = dims[0];
+              }
+              else for(int i=0;i<4;i++) ldims[i] = 0; //- Non-print ranks get zero space
+            }
+
+            if(type==THRP_ONED){
+              for(int mu=0;mu<4;mu++){
+                char *group7_tag;
+                asprintf(&group7_tag,"dir_%02d",mu);
+                group7_id = H5Gcreate(group6_id, group7_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+                hid_t filespace  = H5Screate_simple(4, dims, NULL);
+                hid_t dataset_id = H5Dcreate(group7_id, "threep", DATATYPE_H5, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+                hid_t subspace   = H5Screate_simple(4, ldims, NULL);
+                filespace = H5Dget_space(dataset_id);
+                H5Sselect_hyperslab(filespace, H5S_SELECT_SET, start, NULL, ldims, NULL);
+                hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
+                H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+
+                if(GK_timeRank==src_rank) writeThrpBuf = &(((Float*)Thrp_oneD_HDF5[mu])[2*Mel*Nmoms*w + 2*Mel*Nmoms*Lt*part + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*ipr]);
+                else writeThrpBuf = &(((Float*)Thrp_oneD_HDF5[mu])[2*Mel*Nmoms*Lt*part + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*ipr]);
+
+                herr_t status = H5Dwrite(dataset_id, DATATYPE_H5, subspace, filespace, plist_id, writeThrpBuf);
+
+                H5Sclose(subspace);
+                H5Dclose(dataset_id);
+                H5Sclose(filespace);
+                H5Pclose(plist_id);
+
+                H5Gclose(group7_id);
+              }//-mu          
+            }//-if
+            else{
+              Float *thrpBuf;
+              if(type==THRP_LOCAL) thrpBuf = (Float*)Thrp_local_HDF5;
+              else if(type==THRP_NOETHER) thrpBuf = (Float*)Thrp_noether_HDF5;
+
+              hid_t filespace  = H5Screate_simple(4, dims, NULL);
+              hid_t dataset_id = H5Dcreate(group6_id, "threep", DATATYPE_H5, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+              hid_t subspace   = H5Screate_simple(4, ldims, NULL);
+              filespace = H5Dget_space(dataset_id);
+              H5Sselect_hyperslab(filespace, H5S_SELECT_SET, start, NULL, ldims, NULL);
+              hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
+              H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+
+              if(GK_timeRank==src_rank) writeThrpBuf = &(thrpBuf[2*Mel*Nmoms*w + 2*Mel*Nmoms*Lt*part + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*ipr]);
+              else writeThrpBuf = &(thrpBuf[2*Mel*Nmoms*Lt*part + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*ipr]);
+
+              herr_t status = H5Dwrite(dataset_id, DATATYPE_H5, subspace, filespace, plist_id, writeThrpBuf);
+              
+              H5Sclose(subspace);
+              H5Dclose(dataset_id);
+              H5Sclose(filespace);
+              H5Pclose(plist_id);
+            }//-else      
+            H5Gclose(group6_id);
+          }//-thrp_int
+          H5Gclose(group5_id);
+        }//-part
+        H5Gclose(group4_id);
+      }//-projector
+      H5Gclose(group3_id);
+    }//-its
+    
+    H5Gclose(group2_id);
+    H5Gclose(group1_id);
+    H5Fclose(file_id);
+
+    //-Write the tail buffer
+    for(int its=0;its<Nsink;its++){
+      int tsink = info.tsinkSource[its];
+      int l = ((t_src+tsink)%T)%Lt + 1;
+      
+      int sink_rank = ((t_src+tsink)%T)/Lt;
+      
+      if( tsink < (T - t_src%Lt) ) continue; // No need to write something else
+
+      if(GK_timeRank==sink_rank){
+        Float *tailBuf;
+    
+        hid_t file_idt = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
+
+        start[0] = tsink + 1 - l;
+        start[1] = 0;
+        start[2] = 0;
+        start[3] = 0;
+
+        for(int ipr=0;ipr<info.Nproj[its];ipr++){
+          for(int part=0;part<2;part++){
+            for(int thrp_int=0;thrp_int<3;thrp_int++){
+              THRP_TYPE type = (THRP_TYPE) thrp_int;
+            
+              //-Determine the global dimensions
+              if(type==THRP_LOCAL || type==THRP_ONED) Mel = 16;
+              else if (type==THRP_NOETHER) Mel = 4;
+              else errorQuda("writeThrp_HDF5: Undefined three-point function type.\n");
+              dims[0] = tsink+1;
+              dims[1] = Nmoms;
+              dims[2] = Mel;
+              dims[3] = 2;
+
+              ldims[0] = l;
+              ldims[1] = Nmoms;
+              ldims[2] = Mel;
+              ldims[3] = 2;
+
+              for(int imom=0;imom<GK_Nmoms;imom++){
+                if(type==THRP_ONED){
+                  for(int mu=0;mu<4;mu++){
+                    char *group_tag;
+                    asprintf(&group_tag,"conf_%04d/sx%02dsy%02dsz%02dst%02d/tsink_%02d/proj_%s/%s/%s/dir_%02d",info.traj,
+                             GK_sourcePosition[isource][0],GK_sourcePosition[isource][1],GK_sourcePosition[isource][2],GK_sourcePosition[isource][3],
+                             tsink, info.thrp_proj_type[info.proj_list[its][ipr]], (part==0) ? "up" : "down", info.thrp_type[thrp_int], mu);
+                    hid_t group_id = H5Gopen(file_idt, group_tag, H5P_DEFAULT);
+
+                    hid_t dset_id   = H5Dopen(group_id, "threep", H5P_DEFAULT);
+                    hid_t mspace_id = H5Screate_simple(4, ldims, NULL);
+                    hid_t dspace_id = H5Dget_space(dset_id);
+
+                    H5Sselect_hyperslab(dspace_id, H5S_SELECT_SET, start, NULL, ldims, NULL);
+
+                    tailBuf = &(((Float*)Thrp_oneD_HDF5[mu])[2*Mel*Nmoms*Lt*part + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*ipr]);
+
+                    herr_t status = H5Dwrite(dset_id, DATATYPE_H5, mspace_id, dspace_id, H5P_DEFAULT, tailBuf);
+
+                    H5Dclose(dset_id);
+                    H5Sclose(mspace_id);
+                    H5Sclose(dspace_id);
+                    H5Gclose(group_id);
+                  }//-mu
+                }
+                else{
+                  Float *thrpBuf;
+                  if(type==THRP_LOCAL) thrpBuf = (Float*)Thrp_local_HDF5;
+                  else if(type==THRP_NOETHER) thrpBuf = (Float*)Thrp_noether_HDF5;
+
+                  char *group_tag;
+                  asprintf(&group_tag,"conf_%04d/sx%02dsy%02dsz%02dst%02d/tsink_%02d/proj_%s/%s/%s",info.traj,
+                           GK_sourcePosition[isource][0],GK_sourcePosition[isource][1],GK_sourcePosition[isource][2],GK_sourcePosition[isource][3],
+                           tsink, info.thrp_proj_type[info.proj_list[its][ipr]], (part==0) ? "up" : "down", info.thrp_type[thrp_int]);
+                  hid_t group_id = H5Gopen(file_idt, group_tag, H5P_DEFAULT);
+
+                  hid_t dset_id   = H5Dopen(group_id, "threep", H5P_DEFAULT);
+                  hid_t mspace_id = H5Screate_simple(4, ldims, NULL);
+                  hid_t dspace_id = H5Dget_space(dset_id);
+
+                  H5Sselect_hyperslab(dspace_id, H5S_SELECT_SET, start, NULL, ldims, NULL);
+                
+                  tailBuf = &(thrpBuf[2*Mel*Nmoms*Lt*part + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*ipr]);
+
+                  herr_t status = H5Dwrite(dset_id, DATATYPE_H5, mspace_id, dspace_id, H5P_DEFAULT, tailBuf);
+                
+                  H5Dclose(dset_id);
+                  H5Sclose(mspace_id);
+                  H5Sclose(dspace_id);
+                  H5Gclose(group_id);
+                }
+              }//-imom
+            }//-thrp_int
+          }//-part
+        }//-projector
+        H5Fclose(file_idt);
+      }//-if GK_timeRank==sink_rank
+    }//-its
+
+    //-Write the momenta in a separate dataset (including some attributes)
+    if(GK_timeRank==src_rank){
+      hid_t file_idt   = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
+
+      char *operator_list,*ultra_local_info,*noether_info,*oneD_info;
+      asprintf(&operator_list,"0 = g5\n1 = gx\n2 = gy\n3 = gz\n4 = g0\n5 = Unity\n6 = g5gx\n7 = g5gy\n8 = g5gz\n9 = g5g0\n10 = g5sixy\n11 = g5sixz\n12 = g5siyz\n13 = g5si0x\n14 = g5si0y\n15 = g5si0z\0");
+      asprintf(&ultra_local_info,"Index-order: [t, mom-index, optr-index, real/imag]\0");
+      asprintf(&noether_info,"Index-order: [t, mom-index, direction: [0,1,2,3]=[x,y,z,t], real/imag]\0");
+      asprintf(&oneD_info,"Direction: [0,1,2,3] = [x,y,z,t], Index-order: [t, mom-index, optr-index, real/imag]\0");
+
+      char *thrp_str1,*thrp_str2,*thrp_str3,*thrp_str4,*thrp_str5,*thrp_str6,*thrp_str7,*thrp_str8;
+      asprintf(&thrp_str1,"Momentum-space nucleon 3pt-correlator\nQuark field and operator basis: Physical\n");
+      asprintf(&thrp_str2,"Includes ultra-local and one-derivative operators, noether current\n");
+      asprintf(&thrp_str3,"Precision: %s\n",(typeid(Float) == typeid(float)) ? "single" : "double");
+      asprintf(&thrp_str4,"Inversion tolerance = %e\n",info.inv_tol);
+      asprintf(&thrp_str5,"Operator list:\n%s\n\n",operator_list);
+      asprintf(&thrp_str6,"Ultra-local correlators:\n  %s\n",ultra_local_info);
+      asprintf(&thrp_str7,"Noether current correlators:\n  %s\n",noether_info);
+      asprintf(&thrp_str8,"One-dericative correlators:\n  %s\n",oneD_info);
+
+      char *cNmoms, *cQsq,*corr_info,*ens_info;
+      asprintf(&cNmoms,"%d\0",GK_Nmoms);
+      asprintf(&cQsq,"%d\0",info.Q_sq);
+      asprintf(&corr_info,"%s%s%s%s%s%s%s%s\0",thrp_str1,thrp_str2,thrp_str3,thrp_str4,thrp_str5,thrp_str6,thrp_str7,thrp_str8);
+      asprintf(&ens_info,"kappa = %10.8f\nmu = %8.6f\nCsw = %8.6f\0",info.kappa, info.mu, info.csw);
+      hid_t attrdat_id1 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id2 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id3 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id4 = H5Screate(H5S_SCALAR);
+      hid_t type_id1 = H5Tcopy(H5T_C_S1);
+      hid_t type_id2 = H5Tcopy(H5T_C_S1);
+      hid_t type_id3 = H5Tcopy(H5T_C_S1);
+      hid_t type_id4 = H5Tcopy(H5T_C_S1);
+      H5Tset_size(type_id1, strlen(cNmoms));
+      H5Tset_size(type_id2, strlen(cQsq));
+      H5Tset_size(type_id3, strlen(corr_info));
+      H5Tset_size(type_id4, strlen(ens_info));
+      hid_t attr_id1 = H5Acreate2(file_idt, "Nmoms", type_id1, attrdat_id1, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id2 = H5Acreate2(file_idt, "Qsq"  , type_id2, attrdat_id2, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id3 = H5Acreate2(file_idt, "Correlator-info", type_id3, attrdat_id3, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id4 = H5Acreate2(file_idt, "Ensemble-info", type_id4, attrdat_id4, H5P_DEFAULT, H5P_DEFAULT);
+      H5Awrite(attr_id1, type_id1, cNmoms);
+      H5Awrite(attr_id2, type_id2, cQsq);
+      H5Awrite(attr_id3, type_id3, corr_info);
+      H5Awrite(attr_id4, type_id4, ens_info);
+      H5Aclose(attr_id1);
+      H5Aclose(attr_id2);
+      H5Aclose(attr_id3);
+      H5Aclose(attr_id4);
+      H5Tclose(type_id1);
+      H5Tclose(type_id2);
+      H5Tclose(type_id3);
+      H5Tclose(type_id4);
+      H5Sclose(attrdat_id1);
+      H5Sclose(attrdat_id2);
+      H5Sclose(attrdat_id3);
+      H5Sclose(attrdat_id4);
+
+
+      hid_t MOMTYPE_H5 = H5T_NATIVE_INT;
+      char *dset_tag;
+      asprintf(&dset_tag,"Momenta_list_xyz");
+
+      hsize_t Mdims[2] = {(hsize_t)Nmoms,3};
+      hid_t filespace  = H5Screate_simple(2, Mdims, NULL);
+      hid_t dataset_id = H5Dcreate(file_idt, dset_tag, MOMTYPE_H5, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+      int *Moms_H5 = (int*) malloc(GK_Nmoms*3*sizeof(int));
+      for(int im=0;im<GK_Nmoms;im++){
+        for(int d=0;d<3;d++) Moms_H5[d + 3*im] = GK_moms[im][d];
+      }
+
+      herr_t status = H5Dwrite(dataset_id, MOMTYPE_H5, H5S_ALL, filespace, H5P_DEFAULT, Moms_H5);
+
+      H5Dclose(dataset_id);
+      H5Sclose(filespace);
+      H5Fclose(file_idt);
+
+      free(Moms_H5);
+    }//-if GK_timeRank==0
+
+  }//-if GK_timeRank >= 0 && GK_timeRank < GK_nProc[3]
+}
+
+
+
 
 //-C.K. - New function to copy the three-point data into write Buffers 
 // for writing in HDF5 format
@@ -1880,7 +2756,7 @@ copyThrpToHDF5_Buf(void *Thrp_HDF5,
 		   int its, int Nsink, 
 		   int pr, int sign, 
 		   THRP_TYPE type, 
-		   CORR_SPACE CorrSpace){
+		   CORR_SPACE CorrSpace, bool HighMomForm){
 
   int Mel;
   if(type==THRP_LOCAL || type==THRP_ONED) Mel = 16;
@@ -1888,30 +2764,60 @@ copyThrpToHDF5_Buf(void *Thrp_HDF5,
   else errorQuda("Undefined THRP_TYPE passed to copyThrpToHDF5_Buf.\n");
 
   int Lt = GK_localL[3];
+  int Nmoms = GK_Nmoms;
 
   if(CorrSpace==MOMENTUM_SPACE){
-    if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
-      if(type==THRP_LOCAL || type==THRP_NOETHER){
-	for(int it = 0; it<Lt; it++){
-	  for(int imom = 0; imom<GK_Nmoms; imom++){
-	    for(int im = 0; im<Mel; im++){
-	      ((Float*)Thrp_HDF5)[0 + 2*im + 2*Mel*it + 2*Mel*Lt*imom + 2*Mel*Lt*GK_Nmoms*uORd + 2*Mel*Lt*GK_Nmoms*2*its + 2*Mel*Lt*GK_Nmoms*2*Nsink*pr] = sign*((Float*)corrThp)[0 + 2*im + 2*Mel*imom + 2*Mel*GK_Nmoms*it];
-	      ((Float*)Thrp_HDF5)[1 + 2*im + 2*Mel*it + 2*Mel*Lt*imom + 2*Mel*Lt*GK_Nmoms*uORd + 2*Mel*Lt*GK_Nmoms*2*its + 2*Mel*Lt*GK_Nmoms*2*Nsink*pr] = sign*((Float*)corrThp)[1 + 2*im + 2*Mel*imom + 2*Mel*GK_Nmoms*it];
-	    }
-	  }
-	}
-      }
-      else if(type==THRP_ONED){
-	for(int it = 0; it<Lt; it++){
-	  for(int imom = 0; imom<GK_Nmoms; imom++){
-	    for(int im = 0; im<Mel; im++){
-	      ((Float*)Thrp_HDF5)[0 + 2*im + 2*Mel*it + 2*Mel*Lt*imom + 2*Mel*Lt*GK_Nmoms*uORd + 2*Mel*Lt*GK_Nmoms*2*its + 2*Mel*Lt*GK_Nmoms*2*Nsink*pr] = sign*((Float*)corrThp)[0 + 2*im + 2*Mel*mu + 2*Mel*4*imom + 2*Mel*4*GK_Nmoms*it];
-	      ((Float*)Thrp_HDF5)[1 + 2*im + 2*Mel*it + 2*Mel*Lt*imom + 2*Mel*Lt*GK_Nmoms*uORd + 2*Mel*Lt*GK_Nmoms*2*its + 2*Mel*Lt*GK_Nmoms*2*Nsink*pr] = sign*((Float*)corrThp)[1 + 2*im + 2*Mel*mu + 2*Mel*4*imom + 2*Mel*4*GK_Nmoms*it];
-	    }
-	  }
-	}      
-      }
-    }//-if GK_timeRank
+
+    if(HighMomForm){
+      if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
+        if(type==THRP_LOCAL || type==THRP_NOETHER){
+          for(int it = 0; it<Lt; it++){
+            for(int imom = 0; imom<Nmoms; imom++){
+              for(int im = 0; im<Mel; im++){
+                ((Float*)Thrp_HDF5)[0 + 2*im + 2*Mel*imom + 2*Mel*Nmoms*it + 2*Mel*Nmoms*Lt*uORd + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*pr] = sign*((Float*)corrThp)[0 + 2*im + 2*Mel*imom + 2*Mel*Nmoms*it];
+                ((Float*)Thrp_HDF5)[1 + 2*im + 2*Mel*imom + 2*Mel*Nmoms*it + 2*Mel*Nmoms*Lt*uORd + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*pr] = sign*((Float*)corrThp)[1 + 2*im + 2*Mel*imom + 2*Mel*Nmoms*it];
+              }
+            }
+          }
+        }
+        else if(type==THRP_ONED){
+          for(int it = 0; it<Lt; it++){
+            for(int imom = 0; imom<Nmoms; imom++){
+              for(int im = 0; im<Mel; im++){
+                ((Float*)Thrp_HDF5)[0 + 2*im + 2*Mel*imom + 2*Mel*Nmoms*it + 2*Mel*Nmoms*Lt*uORd + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*pr] = sign*((Float*)corrThp)[0 + 2*im + 2*Mel*mu + 2*Mel*4*imom + 2*Mel*4*Nmoms*it];
+                ((Float*)Thrp_HDF5)[1 + 2*im + 2*Mel*imom + 2*Mel*Nmoms*it + 2*Mel*Nmoms*Lt*uORd + 2*Mel*Nmoms*Lt*2*its + 2*Mel*Nmoms*Lt*2*Nsink*pr] = sign*((Float*)corrThp)[1 + 2*im + 2*Mel*mu + 2*Mel*4*imom + 2*Mel*4*Nmoms*it];
+              }
+            }
+          }      
+        }
+      }//-if GK_timeRank
+
+    }//-if HighMomForm
+    else{
+      if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
+        if(type==THRP_LOCAL || type==THRP_NOETHER){
+          for(int it = 0; it<Lt; it++){
+            for(int imom = 0; imom<Nmoms; imom++){
+              for(int im = 0; im<Mel; im++){
+                ((Float*)Thrp_HDF5)[0 + 2*im + 2*Mel*it + 2*Mel*Lt*imom + 2*Mel*Lt*Nmoms*uORd + 2*Mel*Lt*Nmoms*2*its + 2*Mel*Lt*Nmoms*2*Nsink*pr] = sign*((Float*)corrThp)[0 + 2*im + 2*Mel*imom + 2*Mel*Nmoms*it];
+                ((Float*)Thrp_HDF5)[1 + 2*im + 2*Mel*it + 2*Mel*Lt*imom + 2*Mel*Lt*Nmoms*uORd + 2*Mel*Lt*Nmoms*2*its + 2*Mel*Lt*Nmoms*2*Nsink*pr] = sign*((Float*)corrThp)[1 + 2*im + 2*Mel*imom + 2*Mel*Nmoms*it];
+              }
+            }
+          }
+        }
+        else if(type==THRP_ONED){
+          for(int it = 0; it<Lt; it++){
+            for(int imom = 0; imom<Nmoms; imom++){
+              for(int im = 0; im<Mel; im++){
+                ((Float*)Thrp_HDF5)[0 + 2*im + 2*Mel*it + 2*Mel*Lt*imom + 2*Mel*Lt*Nmoms*uORd + 2*Mel*Lt*Nmoms*2*its + 2*Mel*Lt*Nmoms*2*Nsink*pr] = sign*((Float*)corrThp)[0 + 2*im + 2*Mel*mu + 2*Mel*4*imom + 2*Mel*4*Nmoms*it];
+                ((Float*)Thrp_HDF5)[1 + 2*im + 2*Mel*it + 2*Mel*Lt*imom + 2*Mel*Lt*Nmoms*uORd + 2*Mel*Lt*Nmoms*2*its + 2*Mel*Lt*Nmoms*2*Nsink*pr] = sign*((Float*)corrThp)[1 + 2*im + 2*Mel*mu + 2*Mel*4*imom + 2*Mel*4*Nmoms*it];
+              }
+            }
+          }      
+        }
+      }//-if GK_timeRank    
+    }//-else HighMomForm
+
   }//-if CorrSpace
   else if(CorrSpace==POSITION_SPACE){
     int lV = GK_localVolume;
@@ -1921,9 +2827,8 @@ copyThrpToHDF5_Buf(void *Thrp_HDF5,
 
     for(int v = 0; v<lV; v++){
       for(int im = 0; im<Mel; im++){
-	((Float*)Thrp_HDF5)[0 + 2*v + 2*lV*uORd + 2*lV*2*im + 2*lV*2*Mel*its + 2*lV*2*Mel*Nsink*pr] = sign*tmp3pt[0 + 2*im + 2*Mel*v];
-
-	((Float*)Thrp_HDF5)[1 + 2*v + 2*lV*uORd + 2*lV*2*im + 2*lV*2*Mel*its + 2*lV*2*Mel*Nsink*pr] = sign*tmp3pt[1 + 2*im + 2*Mel*v];
+        ((Float*)Thrp_HDF5)[0 + 2*v + 2*lV*uORd + 2*lV*2*im + 2*lV*2*Mel*its + 2*lV*2*Mel*Nsink*pr] = sign*tmp3pt[0 + 2*im + 2*Mel*v];
+        ((Float*)Thrp_HDF5)[1 + 2*v + 2*lV*uORd + 2*lV*2*im + 2*lV*2*Mel*its + 2*lV*2*Mel*Nsink*pr] = sign*tmp3pt[1 + 2*im + 2*Mel*v];
       }
     }
   }//-else if

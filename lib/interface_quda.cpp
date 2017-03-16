@@ -6111,20 +6111,34 @@ void calcMG_threepTwop_EvenOdd(void **gauge_APE, void **gauge,
   }
   else errorQuda("%s: Check your option for running the three-point function! Exiting.\n", fname);
 
-  // Flag to determine whether to write the correlation functions in 
-  // position or momentum space
+
+  //-C.K. Determine whether to write the correlation functions in position/momentum space, and
+  //- determine whether to write the correlation functions in High-Momenta Form
   CORR_SPACE CorrSpace = info.CorrSpace; 
-  printfQuda("Will write the correlation functions in %s-space!\n", 
-	     (CorrSpace == POSITION_SPACE) ? "position" : "momentum");
-  
-  if(CorrSpace==POSITION_SPACE && info.CorrFileFormat==ASCII_FORM){
-    warningQuda("ASCII format not supported for writing the correlation functions in position-space! Switching to HDF5 format...\n");
+  bool HighMomForm = info.HighMomForm;   
+
+  printfQuda("\n");
+  if(CorrSpace==POSITION_SPACE && HighMomForm){
+    warningQuda("High-Momenta Form not applicable when writing in position-space! Switching to standard form...\n");
+    HighMomForm = false;
+  }
+
+  //-C.K. We do these to switches so that the run does not go wasted.
+  //-C.K. (ASCII format can be obtained with another third-party program, if desired)
+  if( (CorrSpace==POSITION_SPACE || HighMomForm) && info.CorrFileFormat==ASCII_FORM ){
+    if(CorrSpace==POSITION_SPACE) warningQuda("ASCII format not supported for writing the correlation functions in position-space!\n");
+    if(HighMomForm) warningQuda("ASCII format not supported for High-Momenta Form!\n");
+    printfQuda("Switching to HDF5 format...\n");
     info.CorrFileFormat = HDF5_FORM;
   }
   FILE_WRITE_FORMAT CorrFileFormat = info.CorrFileFormat;
-  printfQuda("Will write the correlation functions in %s format\n", 
-	     (CorrFileFormat == ASCII_FORM) ? "ASCII" : "HDF5");
   
+  printfQuda("Will write the correlation functions in %s-space!\n" , (CorrSpace == POSITION_SPACE) ? "position" : "momentum");
+  printfQuda("Will write the correlation functions in %s!\n"       , HighMomForm ? "High-Momenta Form" : "Normal Form");
+  printfQuda("Will write the correlation functions in %s format!\n", (CorrFileFormat == ASCII_FORM) ? "ASCII" : "HDF5");
+  printfQuda("\n");
+  //------------------------------------------------------------------------------------------------
+
 
   //======================================================================//
   //================ M E M O R Y   A L L O C A T I O N ===================// 
@@ -6739,16 +6753,16 @@ void calcMG_threepTwop_EvenOdd(void **gauge_APE, void **gauge,
 	    K_contract->copyThrpToHDF5_Buf((void*)Thrp_local_HDF5, 
 					   (void*)corrThp_local, 0, 
 					   uOrd, its, info.Ntsink, proj, 
-					   thrp_sign, THRP_LOCAL, CorrSpace);
+					   thrp_sign, THRP_LOCAL, CorrSpace, HighMomForm);
 	    K_contract->copyThrpToHDF5_Buf((void*)Thrp_noether_HDF5, 
 					   (void*)corrThp_noether, 0, 
 					   uOrd, its, info.Ntsink, proj, 
-					   thrp_sign, THRP_NOETHER, CorrSpace);
+					   thrp_sign, THRP_NOETHER, CorrSpace, HighMomForm);
 	    for(int mu = 0;mu<4;mu++)
 	      K_contract->copyThrpToHDF5_Buf((void*)Thrp_oneD_HDF5[mu],
 					     (void*)corrThp_oneD, mu, 
 					     uOrd, its, info.Ntsink, proj, 
-					     thrp_sign, THRP_ONED, CorrSpace);
+					     thrp_sign, THRP_ONED, CorrSpace, HighMomForm);
 	    
 	    t2 = MPI_Wtime();
 	    printfQuda("TIME_REPORT - 3-point function for flavor %s copied to HDF5 write buffers in %f sec.\n", NUCLEON == NEUTRON ? "dn" : "up",t2-t1);
@@ -6888,18 +6902,18 @@ void calcMG_threepTwop_EvenOdd(void **gauge_APE, void **gauge,
 					   (void*)corrThp_local, 0, 
 					   uOrd, its, info.Ntsink, 
 					   proj, thrp_sign, THRP_LOCAL, 
-					   CorrSpace);
+					   CorrSpace, HighMomForm);
 	    K_contract->copyThrpToHDF5_Buf((void*)Thrp_noether_HDF5, 
 					   (void*)corrThp_noether, 0, 
 					   uOrd, its, info.Ntsink, 
 					   proj, thrp_sign, THRP_NOETHER, 
-					   CorrSpace);
+					   CorrSpace, HighMomForm);
 	    for(int mu = 0;mu<4;mu++)
 	      K_contract->copyThrpToHDF5_Buf((void*)Thrp_oneD_HDF5[mu], 
 					     (void*)corrThp_oneD,mu, 
 					     uOrd, its, info.Ntsink, 
 					     proj, thrp_sign, THRP_ONED, 
-					     CorrSpace);
+					     CorrSpace, HighMomForm);
 	    
 	    t2 = MPI_Wtime();
 	    printfQuda("TIME_REPORT - 3-point function for flavor %s copied to HDF5 write buffers in %f sec.\n", 
@@ -6994,9 +7008,9 @@ void calcMG_threepTwop_EvenOdd(void **gauge_APE, void **gauge,
       t1 = MPI_Wtime();
       K_contract->copyTwopBaryonsToHDF5_Buf((void*)Twop_baryons_HDF5, 
 					    (void*)corrBaryons, isource, 
-					    CorrSpace);
+					    CorrSpace, HighMomForm);
       K_contract->copyTwopMesonsToHDF5_Buf ((void*)Twop_mesons_HDF5 , 
-					    (void*)corrMesons, CorrSpace);
+					    (void*)corrMesons, CorrSpace, HighMomForm);
       t2 = MPI_Wtime();
       printfQuda("TIME_REPORT - Two-point function for baryons and mesons copied to HDF5 write buffers in %f sec.\n",t2-t1);
       

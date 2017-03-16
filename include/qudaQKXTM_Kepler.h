@@ -304,9 +304,9 @@ namespace quda {
 			       int isource, CORR_SPACE CorrSpace);
    
    void copyTwopBaryonsToHDF5_Buf(void *Twop_baryons_HDF5, void *corrBaryons,
-				  int isource, CORR_SPACE CorrSpace);
+				  int isource, CORR_SPACE CorrSpace, bool HighMomForm);
    void copyTwopMesonsToHDF5_Buf (void *Twop_mesons_HDF5 , void *corrMesons, 
-				  CORR_SPACE CorrSpace);
+				  CORR_SPACE CorrSpace, bool HighMomForm);
    
    void writeTwopBaryonsHDF5(void *twopBaryons, char *filename, 
 			     qudaQKXTMinfo_Kepler info, int isource);
@@ -321,6 +321,11 @@ namespace quda {
 				      qudaQKXTMinfo_Kepler info,int isource);
    void writeTwopMesonsHDF5_PosSpace (void *twopMesons , char *filename, 
 				      qudaQKXTMinfo_Kepler info,int isource);
+
+   void writeTwopBaryonsHDF5_MomSpace_HighMomForm(void *twopBaryons, char *filename,
+                                                  qudaQKXTMinfo_Kepler info, int isource);
+   void writeTwopMesonsHDF5_MomSpace_HighMomForm (void *twopMesons , char *filename,
+                                                  qudaQKXTMinfo_Kepler info, int isource);
 
    void seqSourceFixSinkPart1(QKXTM_Vector_Kepler<Float> &vec, 
 			      QKXTM_Propagator3D_Kepler<Float> &prop1, 
@@ -356,7 +361,7 @@ namespace quda {
 			int tsinkMtsource, CORR_SPACE CorrSpace);
    void copyThrpToHDF5_Buf(void *Thrp_HDF5, void *corrThp,  int mu, int uORd,
 			   int its, int Nsink, int pr, int thrp_sign, 
-			   THRP_TYPE type, CORR_SPACE CorrSpace);
+			   THRP_TYPE type, CORR_SPACE CorrSpace, bool HighMomForm);
    void writeThrpHDF5(void *Thrp_local_HDF5, void *Thrp_noether_HDF5, 
 		      void **Thrp_oneD_HDF5, char *filename, 
 		      qudaQKXTMinfo_Kepler info, int isource, 
@@ -371,6 +376,11 @@ namespace quda {
 			       void **Thrp_oneD_HDF5, char *filename, 
 			       qudaQKXTMinfo_Kepler info, int isource, 
 			       WHICHPARTICLE NUCLEON);
+   void writeThrpHDF5_MomSpace_HighMomForm(void *Thrp_local_HDF5,
+                                           void *Thrp_noether_HDF5,
+                                           void **Thrp_oneD_HDF5, char *filename,
+                                           qudaQKXTMinfo_Kepler info, int isource,
+                                           WHICHPARTICLE NUCLEON);
   };
 
 #ifdef HAVE_ARPACK

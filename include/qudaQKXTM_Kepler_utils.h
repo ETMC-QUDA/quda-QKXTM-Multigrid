@@ -66,7 +66,12 @@ namespace quda {
     FILE_WRITE_FORMAT CorrFileFormat;
     SOURCE_T source_type;
     CORR_SPACE CorrSpace;
+    bool HighMomForm;
     bool isEven;
+    double kappa;
+    double mu;
+    double csw;
+    double inv_tol;
   } qudaQKXTMinfo_Kepler;
   
   
