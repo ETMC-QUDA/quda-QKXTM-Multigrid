@@ -574,24 +574,39 @@ void writeLoops_ASCII(Float *writeBuf, const char *Pref,
 
 }
 
-//-C.K: Copy the HDF5 dataset chunk into writeBuf
+//-C.K: Copy the HDF5 dataset chunk into writeBuf (for writing in Standard-Momenta Form)
 template<typename Float>
-void getLoopWriteBuf(Float *writeBuf, Float *loopBuf, int iPrint, int Nmoms, int imom, bool oneD){
+void getLoopWriteBuf_StrdMomForm(Float *writeBuf, Float *loopBuf, int iPrint, int Nmoms, int imom, bool oneD){
+
+  double fct;
+  if(oneD) fct = 0.25;
+  else     fct = 1.00;
 
   if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
-    if(oneD){
-      for(int lt=0;lt<GK_localL[3];lt++){
-	for(int gm=0;gm<16;gm++){
-	  writeBuf[0+2*gm+2*16*lt] = 0.25*loopBuf[0+2*imom+2*Nmoms*lt+2*Nmoms*GK_localL[3]*gm+2*Nmoms*GK_localL[3]*16*iPrint];
-	  writeBuf[1+2*gm+2*16*lt] = 0.25*loopBuf[1+2*imom+2*Nmoms*lt+2*Nmoms*GK_localL[3]*gm+2*Nmoms*GK_localL[3]*16*iPrint];
-	}
+    for(int lt=0;lt<GK_localL[3];lt++){
+      for(int gm=0;gm<16;gm++){
+	writeBuf[0+2*gm+2*16*lt] = fct*loopBuf[0+2*imom+2*Nmoms*lt+2*Nmoms*GK_localL[3]*gm+2*Nmoms*GK_localL[3]*16*iPrint];
+	writeBuf[1+2*gm+2*16*lt] = fct*loopBuf[1+2*imom+2*Nmoms*lt+2*Nmoms*GK_localL[3]*gm+2*Nmoms*GK_localL[3]*16*iPrint];
       }
     }
-    else{
-      for(int lt=0;lt<GK_localL[3];lt++){
+  }//-if GK_timeRank
+
+}
+
+//-C.K: Copy the HDF5 dataset chunk into writeBuf (for writing in High-Momenta Form)
+template<typename Float>
+void getLoopWriteBuf_HighMomForm(Float *writeBuf, Float *loopBuf, int iPrint, int Nmoms, bool oneD){
+
+  double fct;
+  if(oneD) fct = 0.25;
+  else     fct = 1.00;
+
+  if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
+    for(int lt=0;lt<GK_localL[3];lt++){
+      for(int imom=0;imom<Nmoms;imom++){
 	for(int gm=0;gm<16;gm++){
-	  writeBuf[0+2*gm+2*16*lt] = loopBuf[0+2*imom+2*Nmoms*lt+2*Nmoms*GK_localL[3]*gm+2*Nmoms*GK_localL[3]*16*iPrint];
-	  writeBuf[1+2*gm+2*16*lt] = loopBuf[1+2*imom+2*Nmoms*lt+2*Nmoms*GK_localL[3]*gm+2*Nmoms*GK_localL[3]*16*iPrint];
+	  writeBuf[0 + 2*gm + 2*16*imom + 2*16*Nmoms*lt] = fct*loopBuf[0+2*imom+2*Nmoms*lt+2*Nmoms*GK_localL[3]*gm+2*Nmoms*GK_localL[3]*16*iPrint];
+	  writeBuf[1 + 2*gm + 2*16*imom + 2*16*Nmoms*lt] = fct*loopBuf[1+2*imom+2*Nmoms*lt+2*Nmoms*GK_localL[3]*gm+2*Nmoms*GK_localL[3]*16*iPrint];
 	}
       }
     }
@@ -599,16 +614,18 @@ void getLoopWriteBuf(Float *writeBuf, Float *loopBuf, int iPrint, int Nmoms, int
 
 }
 
-//-C.K: Funtion to write the loops in HDF5 format
-template<typename Float>
-void writeLoops_HDF5(Float *buf_std_uloc, Float *buf_gen_uloc, 
-		     Float **buf_std_oneD, Float **buf_std_csvC, 
-		     Float **buf_gen_oneD, Float **buf_gen_csvC, 
-		     char *file_pref, 
-		     qudaQKXTM_loopInfo loopInfo, int **momQsq,
-		     bool exact_loop, bool useTSM, bool LowPrec){
 
-  if(exact_loop && useTSM) errorQuda("writeLoops_HDF5: Got conflicting options - exact_loop AND useTSM.\n");
+//-C.K: Funtion to write the loops in HDF5 format (Standard Momenta Form)
+template<typename Float>
+void writeLoops_HDF5_StrdMomForm(Float *buf_std_uloc, Float *buf_gen_uloc, 
+				 Float **buf_std_oneD, Float **buf_std_csvC, 
+				 Float **buf_gen_oneD, Float **buf_gen_csvC, 
+				 char *file_pref, 
+				 qudaQKXTM_loopInfo loopInfo, int **momQsq,
+				 bool exact_loop, bool useTSM, bool LowPrec){
+
+  if(loopInfo.HighMomForm) errorQuda("writeLoops_HDF5_StrdMomForm: This function works only with Standard Momenta Form! (Got HighMomForm=true)\n");
+  if(exact_loop && useTSM) errorQuda("writeLoops_HDF5_StrdMomForm: Got conflicting options - exact_loop AND useTSM.\n");
 
   if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
     char fname[512];
@@ -706,7 +723,7 @@ void writeLoops_HDF5(Float *buf_std_uloc, Float *buf_gen_uloc,
 	      hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
 	      H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
 
-	      getLoopWriteBuf(writeBuf,loopBuf,iPrint,loopInfo.Nmoms,imom, loopInfo.loop_oneD[it]);
+	      getLoopWriteBuf_StrdMomForm(writeBuf,loopBuf,iPrint,loopInfo.Nmoms,imom, loopInfo.loop_oneD[it]);
 
 	      herr_t status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, subspace, filespace, plist_id, writeBuf);
 
@@ -730,7 +747,7 @@ void writeLoops_HDF5(Float *buf_std_uloc, Float *buf_gen_uloc,
 	    hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
 	    H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
 
-	    getLoopWriteBuf(writeBuf,loopBuf,iPrint,loopInfo.Nmoms,imom, loopInfo.loop_oneD[it]);
+	    getLoopWriteBuf_StrdMomForm(writeBuf,loopBuf,iPrint,loopInfo.Nmoms,imom, loopInfo.loop_oneD[it]);
 
 	    herr_t status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, subspace, filespace, plist_id, writeBuf);
 
@@ -751,6 +768,260 @@ void writeLoops_HDF5(Float *buf_std_uloc, Float *buf_gen_uloc,
   
     free(writeBuf);
   }
+}
+
+
+//-C.K: Funtion to write the loops in HDF5 format (High Momenta Form)
+template<typename Float>
+void writeLoops_HDF5_HighMomForm(Float *buf_std_uloc, Float *buf_gen_uloc, 
+				 Float **buf_std_oneD, Float **buf_std_csvC, 
+				 Float **buf_gen_oneD, Float **buf_gen_csvC, 
+				 char *file_pref, 
+				 qudaQKXTM_loopInfo loopInfo, int **momQsq,
+				 bool exact_loop, bool useTSM, bool LowPrec){
+
+  if(!loopInfo.HighMomForm) errorQuda("writeLoops_HDF5_HighMomForm: This function works only with High Momenta Form! (Got HighMomForm=false)\n");
+  if(exact_loop && useTSM)  errorQuda("writeLoops_HDF5_StrdMomForm: Got conflicting options - exact_loop AND useTSM.\n");
+
+  if(GK_timeRank >= 0 && GK_timeRank < GK_nProc[3] ){
+    char fname[512];
+    int Nprint,Ndump;
+    int Nmoms = loopInfo.Nmoms;
+
+    if(exact_loop){
+      Nprint = 1;
+      sprintf(fname,"%s_Qsq%d.h5",file_pref,loopInfo.Qsq);
+    }
+    else{
+      if(useTSM){
+	if(LowPrec){
+	  Nprint = loopInfo.TSM_NprintLP;
+	  Ndump  = loopInfo.TSM_NdumpLP;
+	  sprintf(fname,"%s_NLP%04d_step%04d_Qsq%d.h5",file_pref,loopInfo.TSM_NLP,Ndump,loopInfo.Qsq);
+	}
+	else{
+	  Nprint = loopInfo.TSM_NprintHP;
+	  Ndump  = loopInfo.TSM_NdumpHP;
+	  sprintf(fname,"%s_NHP%04d_step%04d_Qsq%d.h5",file_pref,loopInfo.TSM_NHP,Ndump,loopInfo.Qsq);
+	}	
+      }
+      else{
+	Nprint = loopInfo.Nprint;
+	Ndump  = loopInfo.Ndump;
+	sprintf(fname,"%s_Ns%04d_step%04d_Qsq%d.h5",file_pref,loopInfo.Nstoch,Ndump,loopInfo.Qsq);
+      }
+    }
+
+    double *loopBuf = NULL;
+    double *writeBuf = (double*) malloc(GK_localL[3]*Nmoms*16*2*sizeof(double));
+
+    hsize_t start[4]  = {GK_timeRank*GK_localL[3], 0, 0, 0};
+
+    // Dimensions of the dataspace
+    hsize_t dims[4]  = {GK_totalL[3], Nmoms, 16, 2}; // Global
+    hsize_t ldims[4] = {GK_localL[3], Nmoms, 16, 2}; // Local
+
+    hid_t fapl_id = H5Pcreate(H5P_FILE_ACCESS);
+    H5Pset_fapl_mpio(fapl_id, GK_timeComm, MPI_INFO_NULL);
+    hid_t file_id = H5Fcreate(fname, H5F_ACC_TRUNC, H5P_DEFAULT, fapl_id);
+    if(file_id<0) errorQuda("Cannot open %s. Check that directory exists!\n",fname);
+
+    H5Pclose(fapl_id);
+
+    char *group1_tag;
+    asprintf(&group1_tag,"conf_%04d",loopInfo.traj);
+    hid_t group1_id = H5Gcreate(file_id, group1_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    hid_t group2_id;
+    hid_t group3_id;
+    hid_t group4_id;
+
+    for(int iPrint=0;iPrint<Nprint;iPrint++){
+
+      if(!exact_loop){
+	char *group2_tag;
+	if(useTSM){
+	  if(LowPrec) asprintf(&group2_tag,"NLP_%04d",(iPrint+1)*Ndump);
+	  else        asprintf(&group2_tag,"NHP_%04d",(iPrint+1)*Ndump);
+	}
+	else asprintf(&group2_tag,"Nstoch_%04d",(iPrint+1)*Ndump);
+	group2_id = H5Gcreate(group1_id, group2_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+      }
+
+      for(int it=0;it<6;it++){
+	char *group3_tag;
+	asprintf(&group3_tag,"%s",loopInfo.loop_type[it]);
+
+	if(exact_loop) group3_id = H5Gcreate(group1_id, group3_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+	else           group3_id = H5Gcreate(group2_id, group3_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+	if(loopInfo.loop_oneD[it]){
+	  for(int mu=0;mu<4;mu++){
+	    if(strcmp(loopInfo.loop_type[it],"Loops")==0)   loopBuf = buf_std_oneD[mu];
+	    if(strcmp(loopInfo.loop_type[it],"LoopsCv")==0) loopBuf = buf_std_csvC[mu];
+	    if(strcmp(loopInfo.loop_type[it],"LpsDw")==0)   loopBuf = buf_gen_oneD[mu];
+	    if(strcmp(loopInfo.loop_type[it],"LpsDwCv")==0) loopBuf = buf_gen_csvC[mu];
+
+	    char *group4_tag;
+	    asprintf(&group4_tag,"dir_%02d",mu);
+	    group4_id = H5Gcreate(group3_id, group4_tag, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+	    
+	    hid_t filespace  = H5Screate_simple(4, dims, NULL);
+	    hid_t dataset_id = H5Dcreate(group4_id, "loop", H5T_NATIVE_DOUBLE, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+	    hid_t subspace   = H5Screate_simple(4, ldims, NULL);
+	    filespace = H5Dget_space(dataset_id);
+	    H5Sselect_hyperslab(filespace, H5S_SELECT_SET, start, NULL, ldims, NULL);
+	    hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
+	    H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+
+	    getLoopWriteBuf_HighMomForm(writeBuf, loopBuf, iPrint, loopInfo.Nmoms, loopInfo.loop_oneD[it]);
+
+	    herr_t status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, subspace, filespace, plist_id, writeBuf);
+
+	    H5Sclose(subspace);
+	    H5Dclose(dataset_id);
+	    H5Sclose(filespace);
+	    H5Pclose(plist_id);
+
+	    H5Gclose(group4_id);
+	  }//-mu
+	}//-if
+	else{
+	  if(strcmp(loopInfo.loop_type[it],"Scalar")==0) loopBuf = buf_std_uloc;
+	  if(strcmp(loopInfo.loop_type[it],"dOp")==0)    loopBuf = buf_gen_uloc;
+
+	  hid_t filespace  = H5Screate_simple(4, dims, NULL);
+	  hid_t dataset_id = H5Dcreate(group3_id, "loop", H5T_NATIVE_DOUBLE, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+	  hid_t subspace   = H5Screate_simple(4, ldims, NULL);
+	  filespace = H5Dget_space(dataset_id);
+	  H5Sselect_hyperslab(filespace, H5S_SELECT_SET, start, NULL, ldims, NULL);
+	  hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
+	  H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+
+	  getLoopWriteBuf_HighMomForm(writeBuf, loopBuf, iPrint, loopInfo.Nmoms, loopInfo.loop_oneD[it]);
+
+	  herr_t status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, subspace, filespace, plist_id, writeBuf);
+
+	  H5Sclose(subspace);
+	  H5Dclose(dataset_id);
+	  H5Sclose(filespace);
+	  H5Pclose(plist_id);
+	}
+	H5Gclose(group3_id);
+      }//-it
+
+      if(!exact_loop) H5Gclose(group2_id);
+
+    }//-iPrint
+    H5Gclose(group1_id);
+    H5Fclose(file_id);
+  
+    free(writeBuf);
+
+    //-C.K. Write the momenta in a separate dataset (including some attributes)
+    //- Only one task needs to do this
+    if(GK_timeRank==0){
+      hid_t file_idt = H5Fopen(fname, H5F_ACC_RDWR, H5P_DEFAULT);
+
+      char *cNmoms, *cQsq,*loop_info,*ens_info;
+      char *loop_str1,*loop_str2,*loop_str3,*loop_str4,*loop_types[6];
+      asprintf(&loop_types[0],"Scalar  - Ultra-local    operators, Standard    one-end trick\n");
+      asprintf(&loop_types[1],"dOp     - Ultra-local    operators, Generalized one-end trick\n");
+      asprintf(&loop_types[2],"Loops   - One-derivative operators, Standard    one-end trick\n");
+      asprintf(&loop_types[3],"LpsDw   - One-derivative operators, Generalized one-end trick\n");
+      asprintf(&loop_types[4],"LoopsCv - Concerved current,        Standard    one-end trick\n");
+      asprintf(&loop_types[5],"LpsDwCv - Concerved current,        Generalized one-end trick\n");
+      asprintf(&loop_str1,"Momentum-space quark loop\nQuark field basis: Twisted\n");
+      asprintf(&loop_str2,"Precision: %s\n",(typeid(Float) == typeid(float)) ? "single" : "double");
+      asprintf(&loop_str3,"Inversion tolerance: %e\n", loopInfo.inv_tol);
+      asprintf(&loop_str4,"Loop types:\n  %s  %s  %s  %s  %s  %s\n",loop_types[0],loop_types[1],loop_types[2],loop_types[3],loop_types[4],loop_types[5]);
+
+
+      asprintf(&cNmoms,"%d\0",Nmoms);
+      asprintf(&cQsq,"%d\0",loopInfo.Qsq);
+      asprintf(&loop_info,"%s%s%s%s\0",loop_str1,loop_str2,loop_str3,loop_str4);
+      asprintf(&ens_info,"kappa = %10.8f\nmu = %8.6f\nCsw = %8.6f\0",loopInfo.kappa, loopInfo.mu, loopInfo.csw);
+      hid_t attrdat_id1 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id2 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id3 = H5Screate(H5S_SCALAR);
+      hid_t attrdat_id4 = H5Screate(H5S_SCALAR);
+      hid_t type_id1 = H5Tcopy(H5T_C_S1);
+      hid_t type_id2 = H5Tcopy(H5T_C_S1);
+      hid_t type_id3 = H5Tcopy(H5T_C_S1);
+      hid_t type_id4 = H5Tcopy(H5T_C_S1);
+      H5Tset_size(type_id1, strlen(cNmoms));
+      H5Tset_size(type_id2, strlen(cQsq));
+      H5Tset_size(type_id3, strlen(loop_info));
+      H5Tset_size(type_id4, strlen(ens_info));
+      hid_t attr_id1 = H5Acreate2(file_idt, "Nmoms", type_id1, attrdat_id1, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id2 = H5Acreate2(file_idt, "Qsq"  , type_id2, attrdat_id2, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id3 = H5Acreate2(file_idt, "Correlator-info", type_id3, attrdat_id3, H5P_DEFAULT, H5P_DEFAULT);
+      hid_t attr_id4 = H5Acreate2(file_idt, "Ensemble-info", type_id4, attrdat_id4, H5P_DEFAULT, H5P_DEFAULT);
+      H5Awrite(attr_id1, type_id1, cNmoms);
+      H5Awrite(attr_id2, type_id2, cQsq);
+      H5Awrite(attr_id3, type_id3, loop_info);
+      H5Awrite(attr_id4, type_id4, ens_info);
+      H5Aclose(attr_id1);
+      H5Aclose(attr_id2);
+      H5Aclose(attr_id3);
+      H5Aclose(attr_id4);
+      H5Tclose(type_id1);
+      H5Tclose(type_id2);
+      H5Tclose(type_id3);
+      H5Tclose(type_id4);
+      H5Sclose(attrdat_id1);
+      H5Sclose(attrdat_id2);
+      H5Sclose(attrdat_id3);
+      H5Sclose(attrdat_id4);
+
+      hid_t MOMTYPE_H5 = H5T_NATIVE_INT;
+      char *dset_tag;
+      asprintf(&dset_tag,"Momenta_list_xyz");
+
+      hsize_t Mdims[2] = {(hsize_t)Nmoms,3};
+      hid_t filespace  = H5Screate_simple(2, Mdims, NULL);
+      hid_t dataset_id = H5Dcreate(file_idt, dset_tag, MOMTYPE_H5, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+      int *Moms_H5 = (int*) malloc(Nmoms*3*sizeof(int));
+      for(int im=0;im<Nmoms;im++){
+        for(int d=0;d<3;d++) Moms_H5[d + 3*im] = momQsq[im][d];
+      }
+
+      herr_t status = H5Dwrite(dataset_id, MOMTYPE_H5, H5S_ALL, filespace, H5P_DEFAULT, Moms_H5);
+
+      H5Dclose(dataset_id);
+      H5Sclose(filespace);
+      H5Fclose(file_idt);
+
+      free(Moms_H5);
+    }//- if GK_timeRank==0
+
+  }//-if GK_timeRank >= 0 && GK_timeRank < GK_nProc[3]
+}
+
+
+
+template<typename Float>
+void writeLoops_HDF5(Float *buf_std_uloc, Float *buf_gen_uloc, 
+		     Float **buf_std_oneD, Float **buf_std_csvC, 
+		     Float **buf_gen_oneD, Float **buf_gen_csvC, 
+		     char *file_pref, 
+		     qudaQKXTM_loopInfo loopInfo, int **momQsq,
+		     bool exact_loop, bool useTSM, bool LowPrec){
+    
+  if(loopInfo.HighMomForm)
+    writeLoops_HDF5_StrdMomForm<double>(buf_std_uloc, buf_gen_uloc,
+					buf_std_oneD, buf_std_csvC,
+					buf_gen_oneD, buf_gen_csvC,
+					file_pref, loopInfo, momQsq,
+					exact_loop, useTSM, LowPrec);
+  else
+    writeLoops_HDF5_HighMomForm<double>(buf_std_uloc, buf_gen_uloc,
+					buf_std_oneD, buf_std_csvC,
+					buf_gen_oneD, buf_gen_csvC,
+					file_pref, loopInfo, momQsq,
+					exact_loop, useTSM, LowPrec);
+
 }
 
 

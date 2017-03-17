@@ -122,6 +122,7 @@ extern int TSM_NdumpHP;
 extern int TSM_NdumpLP;
 extern int TSM_maxiter;
 extern double TSM_tol;
+extern bool HighMomForm;
 
 //-C.K. ARPACK Parameters
 extern int PolyDeg;
@@ -564,6 +565,11 @@ int main(int argc, char **argv)
   loopInfo.traj = traj;
   loopInfo.Qsq = Q_sq;
   strcpy(loopInfo.loop_fname,loop_fname);
+  loopInfo.HighMomForm = HighMomForm;
+  loopInfo.kappa = kappa;
+  loopInfo.csw = csw;
+  loopInfo.mu = mu;
+  loopInfo.inv_tol = tol;
 
   if( strcmp(loop_file_format,"ASCII")==0 || 
       strcmp(loop_file_format,"ascii")==0 ) {
