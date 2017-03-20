@@ -7232,6 +7232,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   for(int s=0;s<loopInfo.nSteps_defl;s++){
     printfQuda("  %d",loopInfo.deflStep[s]);
   }
+  printfQuda("\n");
   if(info.source_type==RANDOM) printfQuda(" Will use RANDOM stochastic sources\n");
   else if (info.source_type==UNITY) printfQuda(" Will use UNITY stochastic sources\n");
   printfQuda("=====================\n\n");

@@ -1010,13 +1010,13 @@ void writeLoops_HDF5(Float *buf_std_uloc, Float *buf_gen_uloc,
 		     bool exact_loop, bool useTSM, bool LowPrec){
     
   if(loopInfo.HighMomForm)
-    writeLoops_HDF5_StrdMomForm<double>(buf_std_uloc, buf_gen_uloc,
+    writeLoops_HDF5_HighMomForm<double>(buf_std_uloc, buf_gen_uloc,
 					buf_std_oneD, buf_std_csvC,
 					buf_gen_oneD, buf_gen_csvC,
 					file_pref, loopInfo, momQsq,
 					exact_loop, useTSM, LowPrec);
   else
-    writeLoops_HDF5_HighMomForm<double>(buf_std_uloc, buf_gen_uloc,
+    writeLoops_HDF5_StrdMomForm<double>(buf_std_uloc, buf_gen_uloc,
 					buf_std_oneD, buf_std_csvC,
 					buf_gen_oneD, buf_gen_csvC,
 					file_pref, loopInfo, momQsq,
