@@ -7132,7 +7132,8 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
     errorQuda("%s: This function works only with ukqcd gamma basis\n",fname);
   if(param->dirac_order != QUDA_DIRAC_ORDER) 
     errorQuda("%s: This function works only with color-inside-spin\n",fname);
-  
+
+
   //Stochastic, momentum, and data dump information.
   int Nstoch = loopInfo.Nstoch;
   unsigned long int seed = loopInfo.seed;
@@ -7142,7 +7143,14 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   int Nmoms = GK_Nmoms;
   char filename_out[512];
 
+  //-C.K. File Format Checks
+  if( loopInfo.HighMomForm && loopInfo.FileFormat==ASCII_FORM ){
+    warningQuda("ASCII format not supported for High-Momenta Form!\n");
+    printfQuda("Switching to HDF5 format...\n");
+    loopInfo.FileFormat = HDF5_FORM;
+  }
   FILE_WRITE_FORMAT LoopFileFormat = loopInfo.FileFormat;
+
 
   char loop_exact_fname[512];
   char loop_stoch_fname[512];
@@ -7197,6 +7205,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   loopInfo.loop_type[5] = "LpsDwCv";
   loopInfo.loop_oneD[5] = true;   
 
+
   printfQuda("\nLoop Calculation Info\n");
   printfQuda("=====================\n");
   if(useTSM){
@@ -7217,11 +7226,13 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   printfQuda(" The conf trajectory is: %04d\n",loopInfo.traj);
   printfQuda(" Will produce the loop for %d Momentum Combinations\n",Nmoms);
   printfQuda(" The loop file format is %s\n", (LoopFileFormat == ASCII_FORM) ? "ASCII" : "HDF5");
+  printfQuda(" Will write the loops in %s\n", loopInfo.HighMomForm ? "High-Momenta Form" : "Standard Form");
   printfQuda(" The loop base name is %s\n",loopInfo.loop_fname);
   printfQuda(" Will perform the loop for the following %d numbers of eigenvalues:",loopInfo.nSteps_defl);
   for(int s=0;s<loopInfo.nSteps_defl;s++){
     printfQuda("  %d",loopInfo.deflStep[s]);
   }
+  printfQuda("\n");
   if(info.source_type==RANDOM) printfQuda(" Will use RANDOM stochastic sources\n");
   else if (info.source_type==UNITY) printfQuda(" Will use UNITY stochastic sources\n");
   printfQuda("=====================\n\n");
@@ -7645,26 +7656,26 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
     if( (n+1)==loopInfo.deflStep[s] ){     
       if(GK_nProc[2]==1){      
 	doCudaFFT_v2<double>(std_uloc[0], tmp_loop); // Scalar
-	copyLoopToWriteBuf(buf_std_uloc[0], tmp_loop,
-			   iPrint, info.Q_sq, Nmoms,mom);
+	copyLoopToWriteBuf<double>(buf_std_uloc[0], tmp_loop,
+				   iPrint, info.Q_sq, Nmoms,mom);
 	doCudaFFT_v2<double>(gen_uloc[0], tmp_loop); // dOp
-	copyLoopToWriteBuf(buf_gen_uloc[0], tmp_loop, 
-			   iPrint, info.Q_sq, Nmoms,mom);
+	copyLoopToWriteBuf<double>(buf_gen_uloc[0], tmp_loop, 
+				   iPrint, info.Q_sq, Nmoms,mom);
 	
 	for(int mu = 0 ; mu < 4 ; mu++){
 	  doCudaFFT_v2<double>(std_oneD[0][mu], tmp_loop); // Loops
-	  copyLoopToWriteBuf(buf_std_oneD[0][mu], tmp_loop,
-			     iPrint, info.Q_sq, Nmoms,mom);
+	  copyLoopToWriteBuf<double>(buf_std_oneD[0][mu], tmp_loop,
+				     iPrint, info.Q_sq, Nmoms,mom);
 	  doCudaFFT_v2<double>(std_csvC[0][mu], tmp_loop); // LoopsCv
-	  copyLoopToWriteBuf(buf_std_csvC[0][mu], tmp_loop, 
-			     iPrint, info.Q_sq, Nmoms, mom);
+	  copyLoopToWriteBuf<double>(buf_std_csvC[0][mu], tmp_loop, 
+				     iPrint, info.Q_sq, Nmoms, mom);
 	  
 	  doCudaFFT_v2<double>(gen_oneD[0][mu], tmp_loop); // LpsDw
-	  copyLoopToWriteBuf(buf_gen_oneD[0][mu], tmp_loop, 
-			     iPrint, info.Q_sq, Nmoms, mom);
+	  copyLoopToWriteBuf<double>(buf_gen_oneD[0][mu], tmp_loop, 
+				     iPrint, info.Q_sq, Nmoms, mom);
 	  doCudaFFT_v2<double>(gen_csvC[0][mu], tmp_loop); // LpsDwCv
-	  copyLoopToWriteBuf(buf_gen_csvC[0][mu], tmp_loop, 
-			     iPrint, info.Q_sq, Nmoms, mom);
+	  copyLoopToWriteBuf<double>(buf_gen_csvC[0][mu], tmp_loop, 
+				     iPrint, info.Q_sq, Nmoms, mom);
 	}
 	printfQuda("Exact part of Loops for NeV = %d copied to write buffers\n",n+1);
       }
@@ -7697,33 +7708,33 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
       sprintf(loop_exact_fname,"%s_exact_NeV%d",loopInfo.loop_fname,n+1);
       if(LoopFileFormat==ASCII_FORM){ // Write the loops in ASCII format
 	// Scalar
-	writeLoops_ASCII(buf_std_uloc[0], loop_exact_fname, 
-			 loopInfo, momQsq, 0, 0, exact_part, false, false);
+	writeLoops_ASCII<double>(buf_std_uloc[0], loop_exact_fname, 
+				 loopInfo, momQsq, 0, 0, exact_part, false, false);
 	// dOp
-	writeLoops_ASCII(buf_gen_uloc[0], loop_exact_fname, 
-			 loopInfo, momQsq, 1, 0, exact_part, false ,false);
+	writeLoops_ASCII<double>(buf_gen_uloc[0], loop_exact_fname, 
+				 loopInfo, momQsq, 1, 0, exact_part, false ,false);
 	for(int mu = 0 ; mu < 4 ; mu++){
 	  // Loops
-	  writeLoops_ASCII(buf_std_oneD[0][mu], loop_exact_fname, 
-			   loopInfo, momQsq, 2, mu, exact_part,false,false);
+	  writeLoops_ASCII<double>(buf_std_oneD[0][mu], loop_exact_fname, 
+				   loopInfo, momQsq, 2, mu, exact_part,false,false);
 	  // LoopsCv 
-	  writeLoops_ASCII(buf_std_csvC[0][mu], loop_exact_fname, 
-			   loopInfo, momQsq, 3, mu, exact_part,false,false);
+	  writeLoops_ASCII<double>(buf_std_csvC[0][mu], loop_exact_fname, 
+				   loopInfo, momQsq, 3, mu, exact_part,false,false);
 	  // LpsDw
-	  writeLoops_ASCII(buf_gen_oneD[0][mu], loop_exact_fname, 
-			   loopInfo, momQsq, 4, mu, exact_part,false,false);
+	  writeLoops_ASCII<double>(buf_gen_oneD[0][mu], loop_exact_fname, 
+				   loopInfo, momQsq, 4, mu, exact_part,false,false);
 	  // LpsDwCv 
-	  writeLoops_ASCII(buf_gen_csvC[0][mu], loop_exact_fname, 
-			   loopInfo, momQsq, 5, mu, exact_part,false,false); 
+	  writeLoops_ASCII<double>(buf_gen_csvC[0][mu], loop_exact_fname, 
+				   loopInfo, momQsq, 5, mu, exact_part,false,false); 
 	}
       }
       else if(LoopFileFormat==HDF5_FORM){
 	// Write the loops in HDF5 format
-	writeLoops_HDF5(buf_std_uloc[0], buf_gen_uloc[0], 
-			buf_std_oneD[0], buf_std_csvC[0], 
-			buf_gen_oneD[0], buf_gen_csvC[0], 
-			loop_exact_fname, loopInfo, 
-			momQsq, exact_part, false, false);
+	writeLoops_HDF5<double>(buf_std_uloc[0], buf_gen_uloc[0], 
+				buf_std_oneD[0], buf_std_csvC[0], 
+				buf_gen_oneD[0], buf_gen_csvC[0], 
+				loop_exact_fname, loopInfo, 
+				momQsq, exact_part, false, false);
       }
       
       printfQuda("Writing the Exact part of the loops for NeV = %d completed.\n",n+1);

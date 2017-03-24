@@ -121,6 +121,11 @@ namespace quda {
     int TSM_NprintLP;
     long int TSM_maxiter;
     double TSM_tol;
+    bool HighMomForm;
+    double kappa;
+    double mu;
+    double csw;
+    double inv_tol;
   }qudaQKXTM_loopInfo;
 
   enum ALLOCATION_FLAG{NONE,HOST,DEVICE,BOTH,BOTH_EXTRA};

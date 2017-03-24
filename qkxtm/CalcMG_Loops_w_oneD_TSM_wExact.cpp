@@ -64,6 +64,9 @@ extern double tol; // tolerance for inverter
 extern double tol_hq; // heavy-quark tolerance for inverter
 extern QudaMassNormalization normalization; // mass normalization of Dirac operators
 
+extern int mg_setup_maxiter;
+extern double mg_setup_tol;
+
 extern int niter;
 extern int nvec[];
 extern int mg_levels;
@@ -122,6 +125,7 @@ extern int TSM_NdumpHP;
 extern int TSM_NdumpLP;
 extern int TSM_maxiter;
 extern double TSM_tol;
+extern bool HighMomForm;
 
 //-C.K. ARPACK Parameters
 extern int PolyDeg;
@@ -418,6 +422,9 @@ void setMultigridParam(QudaMultigridParam &mg_param) {
     
     mg_param.smoother[i] = smoother_type;
 
+    mg_param.setup_maxiter = mg_setup_maxiter;
+    mg_param.setup_tol = mg_setup_tol;
+
     // set the smoother / bottom solver tolerance 
     // (for MR smoothing this will be ignored)
     // repurpose heavy-quark tolerance for now
@@ -564,6 +571,11 @@ int main(int argc, char **argv)
   loopInfo.traj = traj;
   loopInfo.Qsq = Q_sq;
   strcpy(loopInfo.loop_fname,loop_fname);
+  loopInfo.HighMomForm = HighMomForm;
+  loopInfo.kappa = kappa;
+  loopInfo.csw = csw;
+  loopInfo.mu = mu;
+  loopInfo.inv_tol = tol;
 
   if( strcmp(loop_file_format,"ASCII")==0 || 
       strcmp(loop_file_format,"ascii")==0 ) {
