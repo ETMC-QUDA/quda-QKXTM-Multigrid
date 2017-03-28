@@ -7772,7 +7772,7 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
     int N_dims=4; // Use 4 dimensional coloring
     Nc_HPr = 2*pow(2,N_dims*(loopInfo.k_probing-1));
     Nsc=12;
-    Vc = hch_coloring(loopInfo.k_probing,Ndims);
+    Vc = hch_coloring(loopInfo.k_probing,N_dims);
   }
 
   cudaGaugeField *cudaGauge = checkGauge(param);
