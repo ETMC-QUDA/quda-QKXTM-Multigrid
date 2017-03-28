@@ -126,6 +126,8 @@ namespace quda {
     double mu;
     double csw;
     double inv_tol;
+    bool useHProbWscDil; // This will enable hierarchical probing with spin and color dilution 
+    int k_probing; // Integer number needed for probing e.g. k=1 even-odd coloring
   }qudaQKXTM_loopInfo;
 
   enum ALLOCATION_FLAG{NONE,HOST,DEVICE,BOTH,BOTH_EXTRA};
