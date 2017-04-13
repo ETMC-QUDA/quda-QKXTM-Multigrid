@@ -271,7 +271,7 @@ void get_Blocked_spinColor_dilution(void *blocked_vector, void *input_vector,
   
 	  //The z-coord in the block
   ih - element[1]*Blk_scheme[0];
-  element[2] = ( ih/(Blk_scheme[1]*Blk_scheme[1]) ) % Blk_scheme[2];
+  element[2] = ( ih/(Blk_scheme[0]*Blk_scheme[1]) ) % Blk_scheme[2];
 	  
   //The t-coord in the block
   ih - element[2]*Blk_scheme[0]*Blk_scheme[1];
