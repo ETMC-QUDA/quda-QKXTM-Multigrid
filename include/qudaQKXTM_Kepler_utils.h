@@ -128,6 +128,8 @@ namespace quda {
     double inv_tol;
     bool useHProbWscDil; // This will enable hierarchical probing with spin and color dilution 
     int k_probing; // Integer number needed for probing e.g. k=1 even-odd coloring
+    bool useBlocking; // This will enable blocking with spin and color dilution 
+    int Blocks[4]; // Size of the blocking subvolume
   }qudaQKXTM_loopInfo;
 
   enum ALLOCATION_FLAG{NONE,HOST,DEVICE,BOTH,BOTH_EXTRA};

@@ -7766,13 +7766,23 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   int Nc_HPr=1; // in the case that we do not want to use probing set these to 1
   int Nsc=1;
   unsigned short int* Vc = NULL;
+
+  int element[4] = {0,0,0,0}; //Used for Blocking
+
   printfQuda("\n ### Stochastic part calculation ###\n\n");
 
   if(loopInfo.useHProbWscDil){
     int N_dims=4; // Use 4 dimensional coloring
-    Nc_HPr = 2*pow(2,N_dims*(loopInfo.k_probing-1));
+    Nc_HPr= 2*pow(2,N_dims*(loopInfo.k_probing-1));
     Nsc=12;
     Vc = hch_coloring(loopInfo.k_probing,N_dims);
+  }
+  if(!loopInfo.useHProbWscDil && loopInfo.useBlocking){
+    Nc_HPr = loopInfo.Blocks[0]*loopInfo.Blocks[1]*loopInfo.Blocks[2]*loopInfo.Blocks[3];
+    Nsc = 12;
+  }
+  if(loopInfo.useHProbWscDil && loopInfo.useBlocking){  
+    errorQuda("%s: useHProbWscDil && useBlocking Unsupported\n",fname);
   }
 
   cudaGaugeField *cudaGauge = checkGauge(param);
@@ -7935,6 +7945,15 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 	if(loopInfo.useHProbWscDil){
 	  get_probing4D_spinColor_dilution<double>(probing_input_vector, input_vector, Vc, ih, sc);
 	  K_vector->packVector((double*) probing_input_vector);
+	}
+	else if(loopInfo.useBlocking) {
+	  	  
+	  get_Blocked_spinColor_dilution<double>(probing_input_vector, 
+						 input_vector, element, 
+						 loopInfo.Blocks, ih, sc);
+
+	  K_vector->packVector((double*) probing_input_vector);
+	  
 	}
 	else
 	  K_vector->packVector((double*) input_vector);
@@ -8178,11 +8197,23 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
 	for(int sc = 0 ; sc < Nsc ; sc++){ // if Nc_HPr > 1 and Nsc > 1 uses probing with spin color dilution
 	  t5 = MPI_Wtime();
 	  if(loopInfo.useHProbWscDil){
-	    get_probing4D_spinColor_dilution<double>(probing_input_vector, input_vector, Vc, ih, sc);
+	    get_probing4D_spinColor_dilution<double>(probing_input_vector, 
+						     input_vector, Vc, 
+						     ih, sc);
 	    K_vector->packVector((double*) probing_input_vector);
+	  }
+	  else if(loopInfo.useBlocking) {
+	    
+	    get_Blocked_spinColor_dilution<double>(probing_input_vector, 
+						 input_vector, element, 
+						 loopInfo.Blocks, ih, sc);
+	    
+	    K_vector->packVector((double*) probing_input_vector);
+	    
 	  }
 	  else
 	    K_vector->packVector((double*) input_vector);
+
 	  K_vector->loadVector();
 	  K_vector->uploadToCuda(b,flag_eo);
       
@@ -8557,8 +8588,8 @@ void calcMG_loop_wOneD_TSM_wExact(void **gaugeToPlaquette,
   free(input_vector);
   free(output_vector);
 
-  if(loopInfo.useHProbWscDil){
-    free(Vc);
+  if(loopInfo.useHProbWscDil || loopInfo.useBlocking){
+    if (loopInfo.useHProbWscDil) free(Vc);
     free(probing_input_vector);
   }
 

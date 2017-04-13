@@ -249,3 +249,63 @@ void get_probing4D_spinColor_dilution(void *probing_input_vector, void *input_ve
       ((Float*)probing_input_vector)[i*12*2+sc*2+ri] = signProbing * ((Float*)input_vector)[i*12*2+sc*2+ri];
   }
 }
+
+//DMH
+template <typename Float>
+void get_Blocked_spinColor_dilution(void *blocked_vector, void *input_vector, 
+				    int *element, int *Blk_scheme, 
+				    int ih, int sc){
+
+  int i = 0;
+  //Zero out the blocked vector
+  memset(blocked_vector,0,GK_localVolume*12*2*sizeof(Float));
+
+  // Deduce element to be populated
+
+  //The x-coord in the block
+  element[0] = ih % Blk_scheme[0];
+  
+  //The y-coord in the block
+  ih -= element[0];
+  element[1] = (ih/Blk_scheme[0]) % Blk_scheme[1];
+  
+	  //The z-coord in the block
+  ih - element[1]*Blk_scheme[0];
+  element[2] = ( ih/(Blk_scheme[1]*Blk_scheme[1]) ) % Blk_scheme[2];
+	  
+  //The t-coord in the block
+  ih - element[2]*Blk_scheme[0]*Blk_scheme[1];
+  element[3] = ( ih/(Blk_scheme[0]*Blk_scheme[1]*Blk_scheme[2]) ) % Blk_scheme[3];
+
+  //Loop over local lattice sites
+  for(int x = 0 ; x < GK_localL[0] ; x++)
+  for(int y = 0 ; y < GK_localL[1] ; y++)
+  for(int z = 0 ; z < GK_localL[2] ; z++)
+  for(int t = 0 ; t < GK_localL[3] ; t++){
+	  
+    // This assumes (for the moment) that the
+    // blocking scheme borders and the local 
+    // volume borders always superimpose.
+    //
+    // I.e. GK_localVolume_X / Block_scheme_X = whole number.
+    //
+    // E.g.
+    // GK_localVolume = {32,32,16,32} Block_scheme = {2,2,2,2} will WORK
+    // and
+    // GK_localVolume = {24,24,12,24} Block_scheme = {3,3,3,3} will WORK
+    // but
+    // GK_localVolume = {32,32,16,32} Block_scheme = {3,3,3,3} will FAIL
+    
+    if(x%Blk_scheme[0] == element[0] &&
+       y%Blk_scheme[1] == element[1] &&
+       z%Blk_scheme[2] == element[2] &&
+       t%Blk_scheme[3] == element[3]){
+      
+      //Reconstruct local index
+      i = (((t*GK_localL[2] +z)*GK_localL[1] + y)*GK_localL[0] + x);
+      
+      ((Float*)blocked_vector)[i*12*2+sc*2+0] = ((Float*)input_vector)[i*12*2+sc*2+0];
+      ((Float*)blocked_vector)[i*12*2+sc*2+1] = ((Float*)input_vector)[i*12*2+sc*2+1];
+    }
+  }
+}

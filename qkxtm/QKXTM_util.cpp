@@ -1622,6 +1622,11 @@ double TSM_tol = 0;
 //- Loop params with ARPACK enabled
 char filename_dSteps[512]="none";
 
+//HP and Blocking
+bool useHProbWscDil = true;
+int k_probing = 1;
+bool useBlocking = false;
+int Blocks[4] = {1,1,1,1};
 
 //-C.K. ARPACK Parameters
 char pathEigenVectorsUp[257] = "ev_u.0000";
@@ -1844,6 +1849,11 @@ void usage(char** argv )
   printf("    --TSM-NdumpLP                             # Every how many Low-precision sources to print for TSM\n");
   printf("    --TSM-maxiter                             # Set the iteration number as criterion for Low-precision sources for TSM\n");
   printf("    --TSM-tol                                 # Set the CG tolerance as criterion for Low-precision sources for TSM\n");
+  //HP and Blocking
+  printf("    --useHProbWscDil                          # Use Hierarchical Probing with spin-colour dilution (default true)\n");
+  printf("    --k-probing                               # Some important probing paramter (help!!) (default 1)\n");
+  printf("    --useBlocking                             # Use Blocking with spin-colour dilution (default false)\n");
+  printf("    --Blocks <x y z t>                        # Set the blocking scheme (default 1 1 1 1)\n");
 #ifdef HAVE_ARPACK
   printf("    --pathEigenVectorsUp                      # Path where the eigenVectors for up flavor are (default ev_u.0000)\n");
   printf("    --pathEigenVectorsDown                    # Path where the eigenVectors for up flavor are (default ev_d.0000)\n");
@@ -3225,6 +3235,102 @@ int process_command_line_option(int argc, char** argv, int* idx)
     ret = 0;
     goto out;
   }
+
+  //HP and Blocking
+  if( strcmp(argv[i], "--useHProbWscDil") == 0){
+    if (i+1 >= argc){
+      usage(argv);
+    }	    
+
+    if (strcmp(argv[i+1], "true") == 0){
+      useHProbWscDil = true;
+    }else if (strcmp(argv[i+1], "false") == 0){
+      useHProbWscDil = false;
+    }else{
+      fprintf(stderr, "ERROR: invalid useHProbWscDil type\n");	
+      exit(1);
+    }
+
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  if( strcmp(argv[i], "--useBlocking") == 0){
+    if (i+1 >= argc){
+      usage(argv);
+    }	    
+
+    if (strcmp(argv[i+1], "true") == 0){
+      useBlocking = true;
+    }else if (strcmp(argv[i+1], "false") == 0){
+      useBlocking = false;
+    }else{
+      fprintf(stderr, "ERROR: invalid useBlocking type\n");	
+      exit(1);
+    }
+
+    i++;
+    ret = 0;
+    goto out;
+  }
+
+  if(useBlocking && useHProbWscDil) {
+    fprintf(stderr, "ERROR: Blocking and HP not supported.\n");	
+    exit(1);
+  }
+
+  if( strcmp(argv[i], "--Blocks") == 0){
+    if (i+1 >= argc){ 
+      usage(argv);
+    }     
+    int xsize =  atoi(argv[i+1]);
+    if (xsize < 1 ){
+      printf("ERROR: invalid X Block size");
+      usage(argv);
+    }
+    Blocks[0] = xsize;
+    i++;
+
+    int ysize =  atoi(argv[i+1]);
+    if (ysize < 0 ){
+      printf("ERROR: invalid Y Block size");
+      usage(argv);
+    }
+    Blocks[1] = ysize;
+    i++;
+
+    int zsize =  atoi(argv[i+1]);
+    if (zsize <= 0 ){
+      printf("ERROR: invalid Z Block size");
+      usage(argv);
+    }
+    Blocks[2] = zsize;
+    i++;
+    
+    int tsize =  atoi(argv[i+1]);
+    if (tsize <= 0 ){
+      printf("ERROR: invalid T Block size");
+      usage(argv);
+    }
+    Blocks[3] = tsize;
+    i++;
+
+    ret = 0;
+    goto out;
+  }
+
+  if( strcmp(argv[i], "--k-probing") ==0){
+    if(i+1 >= argc){
+      usage(argv);
+    }
+    k_probing = atoi(argv[i+1]);
+    i++;
+    ret = 0;
+    goto out;
+  }
+  
+
 #ifdef HAVE_ARPACK
   //-Loop info with ARPACK enabled
   if( strcmp(argv[i], "--defl-steps") == 0){

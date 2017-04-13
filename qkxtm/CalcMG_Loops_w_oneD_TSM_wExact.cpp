@@ -127,6 +127,12 @@ extern int TSM_maxiter;
 extern double TSM_tol;
 extern bool HighMomForm;
 
+//HP and Blocking
+extern bool useHProbWscDil;
+extern bool useBlocking;
+extern int k_probing;
+extern int Blocks[];
+
 //-C.K. ARPACK Parameters
 extern int PolyDeg;
 extern int nEv;
@@ -576,6 +582,10 @@ int main(int argc, char **argv)
   loopInfo.csw = csw;
   loopInfo.mu = mu;
   loopInfo.inv_tol = tol;
+  loopInfo.useHProbWscDil = useHProbWscDil;
+  loopInfo.k_probing = k_probing;
+  loopInfo.useBlocking = useBlocking;
+  for(int a=0; a<4; a++) loopInfo.Blocks[a] = Blocks[a];
 
   if( strcmp(loop_file_format,"ASCII")==0 || 
       strcmp(loop_file_format,"ascii")==0 ) {
